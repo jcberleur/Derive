@@ -1,0 +1,14 @@
+﻿<Project Sdk="MSBuild.Sdk.Extras">
+
+  <PropertyGroup>
+    <TargetFrameworks>netstandard1.0;netstandard2.0</TargetFrameworks>
+    <Description>
+      Defines [Derive] (DeriveAttribute) in global:: namespace; used to provide basic implementations for some interfaces.
+      See project site for more details.
+    </Description>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="CodeGeneration.Roslyn.Attributes" Version="0.6.1" />
+  </ItemGroup>
+</Project>

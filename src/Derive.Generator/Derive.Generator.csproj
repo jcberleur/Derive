@@ -1,0 +1,30 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>netstandard2.0</TargetFramework>
+    <IsTool>true</IsTool>
+    <DevelopmentDependency>True</DevelopmentDependency>
+    <LangVersion>7.3</LangVersion>
+
+    <Description>
+      Contains code generator to provide basic implementations for some interfaces.
+      See project site for installation instructions and more details.
+    </Description>
+    <PackageTags>derive equal equatable comparable ord ordering attribute generator generators generation code codegen codegenerator codegeneration</PackageTags>
+    <NoPackageAnalysis>true</NoPackageAnalysis>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Derive.Attributes\Derive.Attributes.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="CodeGeneration.Roslyn" Version="0.6.1" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Compile Remove="templates\Ord.cs" />
+    <Compile Remove="templates\Eq.cs" />
+  </ItemGroup>
+
+</Project>
