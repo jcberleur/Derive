@@ -9,14 +9,14 @@ using Microsoft.CodeAnalysis.CSharp.Syntax;
 
 namespace Derive.Generator
 {
-    public class DeriveGenerator : IRichCodeGenerator
+    public class SumTypeGenerator : IRichCodeGenerator
     {
-        private readonly Interfaces _which;
+        private readonly string _discriminantName;
 
-        public DeriveGenerator(AttributeData attributeData)
+        public SumTypeGenerator(AttributeData attributeData)
         {
             if (attributeData == null) throw new ArgumentNullException(nameof(attributeData));
-            _which = (Interfaces)attributeData.ConstructorArguments[0].Value;
+            _discriminantName = (string) attributeData.GetNamedArgumentValue("DiscriminantName") ?? "Case";
         }
 
         public Task<SyntaxList<MemberDeclarationSyntax>> GenerateAsync(TransformationContext context, IProgress<Diagnostic> progress, CancellationToken cancellationToken)
@@ -28,7 +28,19 @@ namespace Derive.Generator
         {
             var applyToType = (TypeDeclarationSyntax)context.ProcessingNode;
 
-            var derive = DeriveSyntaxGenerator.CreateSyntax(applyToType, _which);
+
+            SyntaxList<MemberDeclarationSyntax> derive;
+            switch (applyToType)
+            {
+                case ClassDeclarationSyntax classDeclaration:
+                    derive = SumTypeClassGenerator.CreateSyntax(classDeclaration, _discriminantName);
+                    break;
+                case StructDeclarationSyntax structDeclaration:
+                    derive = SumTypeStructGenerator.CreateSyntax(structDeclaration, _discriminantName);
+                    break;
+                default:
+                    throw new NotSupportedException();
+            }
 
             // Figure out ancestry for the generated type, including nesting types and namespaces.
             var wrappedMembers = SyntaxFactory.List(derive.WrapWithAncestors(context.ProcessingNode).Select(n => n.NormalizeWhitespace()));
