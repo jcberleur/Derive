@@ -9,7 +9,7 @@ namespace Derive.Generator
 {
     public static class SumTypeClassGenerator
     {
-        public static SyntaxList<MemberDeclarationSyntax> CreateSyntax(ClassDeclarationSyntax original, string discriminantName)
+        public static SyntaxList<MemberDeclarationSyntax> CreateSyntax(ClassDeclarationSyntax original, string discriminantName, bool generateJsonConverter)
         {
             var typeName = original.Identifier.ValueText;
             var cases = original.Members
@@ -46,14 +46,22 @@ namespace Derive.Generator
 
                 var enumMembers = cases.Aggregate(new List<SyntaxNodeOrToken>(), (a, memberName) =>
                 {
-                    if(a.Count != 0)
+                    if (a.Count != 0)
                     {
                         a.Add(Token(SyntaxKind.CommaToken));
+                        a.Add(EnumMemberDeclaration(Identifier(memberName)));
                     }
-                    a.Add(EnumMemberDeclaration(Identifier(memberName)));
+                    else
+                    {
+                        a.Add(EnumMemberDeclaration(Identifier(memberName))
+                            .WithEqualsValue(
+                                EqualsValueClause(
+                                    LiteralExpression(
+                                        SyntaxKind.NumericLiteralExpression,
+                                        Literal(1)))));
+                    }
                     return a;
                 });
-
                 yield return EnumDeclaration("Discriminant")
                     .WithModifiers(
                         TokenList(
@@ -328,7 +336,33 @@ namespace Derive.Generator
 
                 foreach (var caseName in cases)
                 {
+                    var caseClassAttributes = new List<AttributeSyntax>();
+                    if (generateJsonConverter)
+                    {
+                        caseClassAttributes.Add(
+                            Attribute(
+                                QualifiedName(
+                                    QualifiedName(
+                                        IdentifierName("Newtonsoft"),
+                                        IdentifierName("Json")),
+                                    IdentifierName("JsonConverter")))
+                            .WithArgumentList(
+                                AttributeArgumentList(
+                                    SingletonSeparatedList<AttributeArgumentSyntax>(
+                                        AttributeArgument(
+                                            TypeOfExpression(
+                                                QualifiedName(
+                                                    IdentifierName(typeName),
+                                                    IdentifierName("DefaultConverter")))))))
+                        );
+                    }
+
                     yield return ClassDeclaration(caseName)
+                        .WithAttributeLists(
+                            List<AttributeListSyntax>(
+                                SingletonList(
+                                    AttributeList(
+                                        SeparatedList(caseClassAttributes)))))
                         .WithModifiers(
                             TokenList(
                                 new[]{
@@ -359,9 +393,609 @@ namespace Derive.Generator
                                 .WithSemicolonToken(
                                     Token(SyntaxKind.SemicolonToken))));
                 }
+
+                if (generateJsonConverter)
+                {
+                    var dictionaryCases = cases.Aggregate(new List<SyntaxNodeOrToken>(), (a, caseName) =>
+                    {
+                        if (a.Count != 0)
+                        {
+                            a.Add(Token(SyntaxKind.CommaToken));
+                        }
+                        a.Add(
+                            InitializerExpression(
+                                SyntaxKind.ComplexElementInitializerExpression,
+                                SeparatedList<ExpressionSyntax>(
+                                    new SyntaxNodeOrToken[]{
+                                        MemberAccessExpression(
+                                            SyntaxKind.SimpleMemberAccessExpression,
+                                            IdentifierName("Discriminant"),
+                                            IdentifierName(caseName)),
+                                        Token(SyntaxKind.CommaToken),
+                                        TypeOfExpression(
+                                            IdentifierName(caseName))}))
+                        );
+                        return a;
+                    });
+
+                    yield return ClassDeclaration("JsonConverter")
+                        .WithModifiers(
+                            TokenList(
+                                Token(SyntaxKind.PublicKeyword)))
+                        .WithBaseList(
+                            BaseList(
+                                SingletonSeparatedList<BaseTypeSyntax>(
+                                    SimpleBaseType(
+                                        QualifiedName(
+                                            QualifiedName(
+                                                IdentifierName("Newtonsoft"),
+                                                IdentifierName("Json")),
+                                            IdentifierName("JsonConverter"))))))
+                        .WithMembers(
+                            List<MemberDeclarationSyntax>(
+                                new MemberDeclarationSyntax[]{
+                                    FieldDeclaration(
+                                        VariableDeclaration(
+                                            QualifiedName(
+                                                QualifiedName(
+                                                    QualifiedName(
+                                                        IdentifierName("System"),
+                                                        IdentifierName("Collections")),
+                                                    IdentifierName("Generic")),
+                                                GenericName(
+                                                    Identifier("Dictionary"))
+                                                .WithTypeArgumentList(
+                                                    TypeArgumentList(
+                                                        SeparatedList<TypeSyntax>(
+                                                            new SyntaxNodeOrToken[]{
+                                                                IdentifierName("Discriminant"),
+                                                                Token(SyntaxKind.CommaToken),
+                                                                QualifiedName(
+                                                                    IdentifierName("System"),
+                                                                    IdentifierName("Type"))})))))
+                                        .WithVariables(
+                                            SingletonSeparatedList<VariableDeclaratorSyntax>(
+                                                VariableDeclarator(
+                                                    Identifier("_cases"))
+                                                .WithInitializer(
+                                                    EqualsValueClause(
+                                                        ObjectCreationExpression(
+                                                            QualifiedName(
+                                                                QualifiedName(
+                                                                    QualifiedName(
+                                                                        IdentifierName("System"),
+                                                                        IdentifierName("Collections")),
+                                                                    IdentifierName("Generic")),
+                                                                GenericName(
+                                                                    Identifier("Dictionary"))
+                                                                .WithTypeArgumentList(
+                                                                    TypeArgumentList(
+                                                                        SeparatedList<TypeSyntax>(
+                                                                            new SyntaxNodeOrToken[]{
+                                                                                IdentifierName("Discriminant"),
+                                                                                Token(SyntaxKind.CommaToken),
+                                                                                QualifiedName(
+                                                                                    IdentifierName("System"),
+                                                                                    IdentifierName("Type"))})))))
+                                                        .WithInitializer(
+                                                            InitializerExpression(
+                                                                SyntaxKind.CollectionInitializerExpression,
+                                                                SeparatedList<ExpressionSyntax>(dictionaryCases))))))))
+                                    .WithModifiers(
+                                        TokenList(
+                                            new []{
+                                                Token(SyntaxKind.PrivateKeyword),
+                                                Token(SyntaxKind.ReadOnlyKeyword)})),
+
+                                    PropertyDeclaration(
+                                        PredefinedType(
+                                            Token(SyntaxKind.BoolKeyword)),
+                                        Identifier("CanWrite"))
+                                    .WithModifiers(
+                                        TokenList(
+                                            new []{
+                                                Token(SyntaxKind.PublicKeyword),
+                                                Token(SyntaxKind.OverrideKeyword)}))
+                                    .WithExpressionBody(
+                                        ArrowExpressionClause(
+                                            LiteralExpression(
+                                                SyntaxKind.FalseLiteralExpression)))
+                                    .WithSemicolonToken(
+                                        Token(SyntaxKind.SemicolonToken)),
+
+                                    MethodDeclaration(
+                                        PredefinedType(
+                                            Token(SyntaxKind.VoidKeyword)),
+                                        Identifier("WriteJson"))
+                                    .WithModifiers(
+                                        TokenList(
+                                            new []{
+                                                Token(SyntaxKind.PublicKeyword),
+                                                Token(SyntaxKind.OverrideKeyword)}))
+                                    .WithParameterList(
+                                        ParameterList(
+                                            SeparatedList<ParameterSyntax>(
+                                                new SyntaxNodeOrToken[]{
+                                                    Parameter(
+                                                        Identifier("writer"))
+                                                    .WithType(
+                                                        QualifiedName(
+                                                            QualifiedName(
+                                                                IdentifierName("Newtonsoft"),
+                                                                IdentifierName("Json")),
+                                                            IdentifierName("JsonWriter"))),
+                                                    Token(SyntaxKind.CommaToken),
+                                                    Parameter(
+                                                        Identifier("value"))
+                                                    .WithType(
+                                                        PredefinedType(
+                                                            Token(SyntaxKind.ObjectKeyword))),
+                                                    Token(SyntaxKind.CommaToken),
+                                                    Parameter(
+                                                        Identifier("serializer"))
+                                                    .WithType(
+                                                        QualifiedName(
+                                                            QualifiedName(
+                                                                IdentifierName("Newtonsoft"),
+                                                                IdentifierName("Json")),
+                                                            IdentifierName("JsonSerializer")))})))
+                                    .WithBody(
+                                        Block(
+                                            SingletonList<StatementSyntax>(
+                                                ThrowStatement(
+                                                    ObjectCreationExpression(
+                                                        QualifiedName(
+                                                            IdentifierName("System"),
+                                                            IdentifierName("NotSupportedException")))
+                                                    .WithArgumentList(
+                                                        ArgumentList(
+                                                            SingletonSeparatedList<ArgumentSyntax>(
+                                                                Argument(
+                                                                    LiteralExpression(
+                                                                        SyntaxKind.StringLiteralExpression,
+                                                                        Literal("Unnecessary because CanWrite is false. The type will skip the converter.")))))))))),
+
+        MethodDeclaration(
+            PredefinedType(
+                Token(SyntaxKind.ObjectKeyword)),
+            Identifier("ReadJson"))
+        .WithModifiers(
+            TokenList(
+                new []{
+                    Token(SyntaxKind.PublicKeyword),
+                    Token(SyntaxKind.OverrideKeyword)}))
+        .WithParameterList(
+            ParameterList(
+                SeparatedList<ParameterSyntax>(
+                    new SyntaxNodeOrToken[]{
+                        Parameter(
+                            Identifier("reader"))
+                        .WithType(
+                            QualifiedName(
+                                QualifiedName(
+                                    IdentifierName("Newtonsoft"),
+                                    IdentifierName("Json")),
+                                IdentifierName("JsonReader"))),
+                        Token(SyntaxKind.CommaToken),
+                        Parameter(
+                            Identifier("objectType"))
+                        .WithType(
+                            IdentifierName("Type")),
+                        Token(SyntaxKind.CommaToken),
+                        Parameter(
+                            Identifier("existingValue"))
+                        .WithType(
+                            PredefinedType(
+                                Token(SyntaxKind.ObjectKeyword))),
+                        Token(SyntaxKind.CommaToken),
+                        Parameter(
+                            Identifier("serializer"))
+                        .WithType(
+                            QualifiedName(
+                                QualifiedName(
+                                    IdentifierName("Newtonsoft"),
+                                    IdentifierName("Json")),
+                                IdentifierName("JsonSerializer")))})))
+        .WithBody(
+            Block(
+                LocalDeclarationStatement(
+                    VariableDeclaration(
+                        IdentifierName("var"))
+                    .WithVariables(
+                        SingletonSeparatedList<VariableDeclaratorSyntax>(
+                            VariableDeclarator(
+                                Identifier("jObject"))
+                            .WithInitializer(
+                                EqualsValueClause(
+                                    InvocationExpression(
+                                        MemberAccessExpression(
+                                            SyntaxKind.SimpleMemberAccessExpression,
+                                            IdentifierName("serializer"),
+                                            GenericName(
+                                                Identifier("Deserialize"))
+                                            .WithTypeArgumentList(
+                                                TypeArgumentList(
+                                                    SingletonSeparatedList<TypeSyntax>(
+                                                        QualifiedName(
+                                                            QualifiedName(
+                                                                QualifiedName(
+                                                                    IdentifierName("Newtonsoft"),
+                                                                    IdentifierName("Json")),
+                                                                IdentifierName("Linq")),
+                                                            IdentifierName("JObject")))))))
+                                    .WithArgumentList(
+                                        ArgumentList(
+                                            SingletonSeparatedList<ArgumentSyntax>(
+                                                Argument(
+                                                    IdentifierName("reader")))))))))),
+                IfStatement(
+                    PrefixUnaryExpression(
+                        SyntaxKind.LogicalNotExpression,
+                        InvocationExpression(
+                            MemberAccessExpression(
+                                SyntaxKind.SimpleMemberAccessExpression,
+                                IdentifierName("jObject"),
+                                IdentifierName("TryGetValue")))
+                        .WithArgumentList(
+                            ArgumentList(
+                                SeparatedList<ArgumentSyntax>(
+                                    new SyntaxNodeOrToken[]{
+                                        Argument(
+                                            InvocationExpression(
+                                                IdentifierName("nameof"))
+                                            .WithArgumentList(
+                                                ArgumentList(
+                                                    SingletonSeparatedList<ArgumentSyntax>(
+                                                        Argument(
+                                                            MemberAccessExpression(
+                                                                SyntaxKind.SimpleMemberAccessExpression,
+                                                                IdentifierName(typeName),
+                                                                IdentifierName(discriminantName))))))),
+                                        Token(SyntaxKind.CommaToken),
+                                        Argument(
+                                            DeclarationExpression(
+                                                IdentifierName("var"),
+                                                SingleVariableDesignation(
+                                                    Identifier("discriminantToken"))))
+                                        .WithRefKindKeyword(
+                                            Token(SyntaxKind.OutKeyword))})))),
+                    Block(
+                        SingletonList<StatementSyntax>(
+                            ThrowStatement(
+                                ObjectCreationExpression(
+                                    QualifiedName(
+                                        QualifiedName(
+                                            IdentifierName("Newtonsoft"),
+                                            IdentifierName("Json")),
+                                        IdentifierName("JsonSerializationException")))
+                                .WithArgumentList(
+                                    ArgumentList(
+                                        SingletonSeparatedList<ArgumentSyntax>(
+                                            Argument(
+                                                InterpolatedStringExpression(
+                                                    Token(SyntaxKind.InterpolatedStringStartToken))
+                                                .WithContents(
+                                                    List<InterpolatedStringContentSyntax>(
+                                                        new InterpolatedStringContentSyntax[]{
+                                                            InterpolatedStringText()
+                                                            .WithTextToken(
+                                                                Token(
+                                                                    TriviaList(),
+                                                                    SyntaxKind.InterpolatedStringTextToken,
+                                                                    "Missing required property ",
+                                                                    "Missing required property ",
+                                                                    TriviaList())),
+                                                            Interpolation(
+                                                                InvocationExpression(
+                                                                    IdentifierName("nameof"))
+                                                                .WithArgumentList(
+                                                                    ArgumentList(
+                                                                        SingletonSeparatedList<ArgumentSyntax>(
+                                                                            Argument(
+                                                                                MemberAccessExpression(
+                                                                                    SyntaxKind.SimpleMemberAccessExpression,
+                                                                                    IdentifierName(typeName),
+                                                                                    IdentifierName(discriminantName))))))),
+                                                            InterpolatedStringText()
+                                                            .WithTextToken(
+                                                                Token(
+                                                                    TriviaList(),
+                                                                    SyntaxKind.InterpolatedStringTextToken,
+                                                                    " on Type ",
+                                                                    " on Type ",
+                                                                    TriviaList())),
+                                                            Interpolation(
+                                                                TypeOfExpression(
+                                                                    IdentifierName(typeName)))})))))))))),
+                LocalDeclarationStatement(
+                    VariableDeclaration(
+                        IdentifierName("var"))
+                    .WithVariables(
+                        SingletonSeparatedList<VariableDeclaratorSyntax>(
+                            VariableDeclarator(
+                                Identifier("discriminant"))
+                            .WithInitializer(
+                                EqualsValueClause(
+                                    InvocationExpression(
+                                        MemberAccessExpression(
+                                            SyntaxKind.SimpleMemberAccessExpression,
+                                            IdentifierName("discriminantToken"),
+                                            GenericName(
+                                                Identifier("ToObject"))
+                                            .WithTypeArgumentList(
+                                                TypeArgumentList(
+                                                    SingletonSeparatedList<TypeSyntax>(
+                                                        IdentifierName("Discriminant"))))))
+                                    .WithArgumentList(
+                                        ArgumentList(
+                                            SingletonSeparatedList<ArgumentSyntax>(
+                                                Argument(
+                                                    IdentifierName("serializer")))))))))),
+                ReturnStatement(
+                    InvocationExpression(
+                        MemberAccessExpression(
+                            SyntaxKind.SimpleMemberAccessExpression,
+                            IdentifierName("jObject"),
+                            IdentifierName("ToObject")))
+                    .WithArgumentList(
+                        ArgumentList(
+                            SeparatedList<ArgumentSyntax>(
+                                new SyntaxNodeOrToken[]{
+                                    Argument(
+                                        ElementAccessExpression(
+                                            IdentifierName("_cases"))
+                                        .WithArgumentList(
+                                            BracketedArgumentList(
+                                                SingletonSeparatedList<ArgumentSyntax>(
+                                                    Argument(
+                                                        IdentifierName("discriminant")))))),
+                                    Token(SyntaxKind.CommaToken),
+                                    Argument(
+                                        IdentifierName("serializer"))})))))),
+                                    MethodDeclaration(
+                                        PredefinedType(
+                                            Token(SyntaxKind.BoolKeyword)),
+                                        Identifier("CanConvert"))
+                                    .WithModifiers(
+                                        TokenList(
+                                            new []{
+                                                Token(SyntaxKind.PublicKeyword),
+                                                Token(SyntaxKind.OverrideKeyword)}))
+                                    .WithParameterList(
+                                        ParameterList(
+                                            SingletonSeparatedList<ParameterSyntax>(
+                                                Parameter(
+                                                    Identifier("objectType"))
+                                                .WithType(
+                                                    QualifiedName(
+                                                        IdentifierName("System"),
+                                                        IdentifierName("Type"))))))
+                                    .WithExpressionBody(
+                                        ArrowExpressionClause(
+                                            InvocationExpression(
+                                                MemberAccessExpression(
+                                                    SyntaxKind.SimpleMemberAccessExpression,
+                                                    TypeOfExpression(
+                                                        IdentifierName(typeName)),
+                                                    IdentifierName("IsAssignableFrom")))
+                                            .WithArgumentList(
+                                                ArgumentList(
+                                                    SingletonSeparatedList<ArgumentSyntax>(
+                                                        Argument(
+                                                            IdentifierName("objectType")))))))
+                                    .WithSemicolonToken(
+                                        Token(SyntaxKind.SemicolonToken)),
+
+                                }));
+
+                    yield return
+        ClassDeclaration("DefaultConverter")
+        .WithModifiers(
+            TokenList(
+                Token(SyntaxKind.PublicKeyword)))
+        .WithBaseList(
+            BaseList(
+                SingletonSeparatedList<BaseTypeSyntax>(
+                    SimpleBaseType(
+                        QualifiedName(
+                            QualifiedName(
+                                IdentifierName("Newtonsoft"),
+                                IdentifierName("Json")),
+                            IdentifierName("JsonConverter"))))))
+        .WithMembers(
+            List<MemberDeclarationSyntax>(
+                new MemberDeclarationSyntax[]{
+                    PropertyDeclaration(
+                        PredefinedType(
+                            Token(SyntaxKind.BoolKeyword)),
+                        Identifier("CanWrite"))
+                    .WithModifiers(
+                        TokenList(
+                            new []{
+                                Token(SyntaxKind.PublicKeyword),
+                                Token(SyntaxKind.OverrideKeyword)}))
+                    .WithExpressionBody(
+                        ArrowExpressionClause(
+                            LiteralExpression(
+                                SyntaxKind.FalseLiteralExpression)))
+                    .WithSemicolonToken(
+                        Token(SyntaxKind.SemicolonToken)),
+                    MethodDeclaration(
+                        PredefinedType(
+                            Token(SyntaxKind.VoidKeyword)),
+                        Identifier("WriteJson"))
+                    .WithModifiers(
+                        TokenList(
+                            new []{
+                                Token(SyntaxKind.PublicKeyword),
+                                Token(SyntaxKind.OverrideKeyword)}))
+                    .WithParameterList(
+                        ParameterList(
+                            SeparatedList<ParameterSyntax>(
+                                new SyntaxNodeOrToken[]{
+                                    Parameter(
+                                        Identifier("writer"))
+                                    .WithType(
+                                        QualifiedName(
+                                            QualifiedName(
+                                                IdentifierName("Newtonsoft"),
+                                                IdentifierName("Json")),
+                                            IdentifierName("JsonWriter"))),
+                                    Token(SyntaxKind.CommaToken),
+                                    Parameter(
+                                        Identifier("value"))
+                                    .WithType(
+                                        PredefinedType(
+                                            Token(SyntaxKind.ObjectKeyword))),
+                                    Token(SyntaxKind.CommaToken),
+                                    Parameter(
+                                        Identifier("serializer"))
+                                    .WithType(
+                                        QualifiedName(
+                                            QualifiedName(
+                                                IdentifierName("Newtonsoft"),
+                                                IdentifierName("Json")),
+                                            IdentifierName("JsonSerializer")))})))
+                    .WithBody(
+                        Block(
+                            SingletonList<StatementSyntax>(
+                                ThrowStatement(
+                                    ObjectCreationExpression(
+                                        QualifiedName(
+                                            IdentifierName("System"),
+                                            IdentifierName("NotSupportedException")))
+                                    .WithArgumentList(
+                                        ArgumentList(
+                                            SingletonSeparatedList<ArgumentSyntax>(
+                                                Argument(
+                                                    LiteralExpression(
+                                                        SyntaxKind.StringLiteralExpression,
+                                                        Literal("Unnecessary because CanWrite is false. The type will skip the converter.")))))))))),
+                    PropertyDeclaration(
+                        PredefinedType(
+                            Token(SyntaxKind.BoolKeyword)),
+                        Identifier("CanRead"))
+                    .WithModifiers(
+                        TokenList(
+                            new []{
+                                Token(SyntaxKind.PublicKeyword),
+                                Token(SyntaxKind.OverrideKeyword)}))
+                    .WithExpressionBody(
+                        ArrowExpressionClause(
+                            LiteralExpression(
+                                SyntaxKind.FalseLiteralExpression)))
+                    .WithSemicolonToken(
+                        Token(SyntaxKind.SemicolonToken)),
+                    MethodDeclaration(
+                        PredefinedType(
+                            Token(SyntaxKind.ObjectKeyword)),
+                        Identifier("ReadJson"))
+                    .WithModifiers(
+                        TokenList(
+                            new []{
+                                Token(SyntaxKind.PublicKeyword),
+                                Token(SyntaxKind.OverrideKeyword)}))
+                    .WithParameterList(
+                        ParameterList(
+                            SeparatedList<ParameterSyntax>(
+                                new SyntaxNodeOrToken[]{
+                                    Parameter(
+                                        Identifier("reader"))
+                                    .WithType(
+                                        QualifiedName(
+                                            QualifiedName(
+                                                IdentifierName("Newtonsoft"),
+                                                IdentifierName("Json")),
+                                            IdentifierName("JsonReader"))),
+                                    Token(SyntaxKind.CommaToken),
+                                    Parameter(
+                                        Identifier("objectType"))
+                                    .WithType(
+                                        IdentifierName("Type")),
+                                    Token(SyntaxKind.CommaToken),
+                                    Parameter(
+                                        Identifier("existingValue"))
+                                    .WithType(
+                                        PredefinedType(
+                                            Token(SyntaxKind.ObjectKeyword))),
+                                    Token(SyntaxKind.CommaToken),
+                                    Parameter(
+                                        Identifier("serializer"))
+                                    .WithType(
+                                        QualifiedName(
+                                            QualifiedName(
+                                                IdentifierName("Newtonsoft"),
+                                                IdentifierName("Json")),
+                                            IdentifierName("JsonSerializer")))})))
+                    .WithBody(
+                        Block(
+                            SingletonList<StatementSyntax>(
+                                ThrowStatement(
+                                    ObjectCreationExpression(
+                                        QualifiedName(
+                                            IdentifierName("System"),
+                                            IdentifierName("NotSupportedException")))
+                                    .WithArgumentList(
+                                        ArgumentList(
+                                            SingletonSeparatedList<ArgumentSyntax>(
+                                                Argument(
+                                                    LiteralExpression(
+                                                        SyntaxKind.StringLiteralExpression,
+                                                        Literal("Unnecessary because CanRead is false. The type will skip the converter.")))))))))),
+                    MethodDeclaration(
+                        PredefinedType(
+                            Token(SyntaxKind.BoolKeyword)),
+                        Identifier("CanConvert"))
+                    .WithModifiers(
+                        TokenList(
+                            new []{
+                                Token(SyntaxKind.PublicKeyword),
+                                Token(SyntaxKind.OverrideKeyword)}))
+                    .WithParameterList(
+                        ParameterList(
+                            SingletonSeparatedList<ParameterSyntax>(
+                                Parameter(
+                                    Identifier("objectType"))
+                                .WithType(
+                                    QualifiedName(
+                                        IdentifierName("System"),
+                                        IdentifierName("Type"))))))
+                    .WithExpressionBody(
+                        ArrowExpressionClause(
+                            LiteralExpression(
+                                SyntaxKind.TrueLiteralExpression)))
+                    .WithSemicolonToken(
+                        Token(SyntaxKind.SemicolonToken))}));
+                }
+            }
+
+            var attributes = new List<AttributeSyntax>();
+            if (generateJsonConverter)
+            {
+                attributes.Add(
+                    Attribute(
+                        QualifiedName(
+                            QualifiedName(
+                                IdentifierName("Newtonsoft"),
+                                IdentifierName("Json")),
+                            IdentifierName("JsonConverter")))
+                    .WithArgumentList(
+                        AttributeArgumentList(
+                            SingletonSeparatedList<AttributeArgumentSyntax>(
+                                AttributeArgument(
+                                    TypeOfExpression(
+                                        QualifiedName(
+                                            IdentifierName(typeName),
+                                            IdentifierName("JsonConverter")))))))
+                );
             }
 
             return SingletonList<MemberDeclarationSyntax>(ClassDeclaration(typeName)
+                .WithAttributeLists(
+                    List<AttributeListSyntax>(
+                        SingletonList(
+                            AttributeList(
+                                SeparatedList(attributes)))))
                 .WithModifiers(
                     TokenList(
                         new[]{

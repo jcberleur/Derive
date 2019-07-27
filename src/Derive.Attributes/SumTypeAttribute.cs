@@ -11,4 +11,9 @@ public class SumTypeAttribute : Attribute
     /// Name of the property to use as a discriminant enum.
     /// </summary>
     public string DiscriminantName { get; set; }
+
+    /// <summary>
+    /// Enable generatation of a Newtonsoft.Json.JsonConverter for this type.
+    /// </summary>
+    public bool JsonConverter { get; set; }
 }
