@@ -977,33 +977,33 @@ namespace Derive.Generator
                 }
             }
 
-            var attributes = new List<AttributeSyntax>();
+            var attributes = new List<AttributeListSyntax>();
             if (generateJsonConverter)
             {
                 attributes.Add(
-                    Attribute(
-                        QualifiedName(
-                            QualifiedName(
-                                IdentifierName("Newtonsoft"),
-                                IdentifierName("Json")),
-                            IdentifierName("JsonConverter")))
-                    .WithArgumentList(
-                        AttributeArgumentList(
-                            SingletonSeparatedList<AttributeArgumentSyntax>(
-                                AttributeArgument(
-                                    TypeOfExpression(
-                                        QualifiedName(
-                                            IdentifierName(typeName),
-                                            IdentifierName("JsonConverter")))))))
+                    AttributeList(
+                        SingletonSeparatedList<AttributeSyntax>(
+                            Attribute(
+                                QualifiedName(
+                                    QualifiedName(
+                                        IdentifierName("Newtonsoft"),
+                                        IdentifierName("Json")),
+                                    IdentifierName("JsonConverter")))
+                            .WithArgumentList(
+                                AttributeArgumentList(
+                                    SingletonSeparatedList<AttributeArgumentSyntax>(
+                                        AttributeArgument(
+                                            TypeOfExpression(
+                                                QualifiedName(
+                                                    IdentifierName(typeName),
+                                                    IdentifierName("JsonConverter")))))))))
                 );
             }
 
             return SingletonList<MemberDeclarationSyntax>(ClassDeclaration(typeName)
                 .WithAttributeLists(
                     List<AttributeListSyntax>(
-                        SingletonList(
-                            AttributeList(
-                                SeparatedList(attributes)))))
+                        List(attributes)))
                 .WithModifiers(
                     TokenList(
                         new[]{
