@@ -334,64 +334,72 @@ namespace Derive.Generator
                                                             IdentifierName("MethodImplOptions")),
                                                         IdentifierName("AggressiveInlining"))))))))));
 
-                foreach (var caseName in cases)
+                foreach(var caseClass in original.Members.OfType<ClassDeclarationSyntax>())
                 {
-                    var caseClassAttributes = new List<AttributeSyntax>();
+                    var caseClassAttributes = new List<AttributeListSyntax>();
+
                     if (generateJsonConverter)
                     {
                         caseClassAttributes.Add(
-                            Attribute(
-                                QualifiedName(
-                                    QualifiedName(
-                                        IdentifierName("Newtonsoft"),
-                                        IdentifierName("Json")),
-                                    IdentifierName("JsonConverter")))
-                            .WithArgumentList(
-                                AttributeArgumentList(
-                                    SingletonSeparatedList<AttributeArgumentSyntax>(
-                                        AttributeArgument(
-                                            TypeOfExpression(
-                                                QualifiedName(
-                                                    IdentifierName(typeName),
-                                                    IdentifierName("DefaultConverter")))))))
+                            AttributeList(
+                                SingletonSeparatedList(
+                                    Attribute(
+                                        QualifiedName(
+                                            QualifiedName(
+                                                IdentifierName("Newtonsoft"),
+                                                IdentifierName("Json")),
+                                            IdentifierName("JsonConverter")))
+                                    .WithArgumentList(
+                                        AttributeArgumentList(
+                                            SingletonSeparatedList<AttributeArgumentSyntax>(
+                                                AttributeArgument(
+                                                    TypeOfExpression(
+                                                        QualifiedName(
+                                                            IdentifierName(typeName),
+                                                            IdentifierName("DefaultConverter")))))))))
                         );
                     }
 
-                    yield return ClassDeclaration(caseName)
-                        .WithAttributeLists(
-                            List<AttributeListSyntax>(
-                                SingletonList(
-                                    AttributeList(
-                                        SeparatedList(caseClassAttributes)))))
-                        .WithModifiers(
-                            TokenList(
-                                new[]{
-                                    Token(SyntaxKind.PublicKeyword),
-                                    Token(SyntaxKind.SealedKeyword),
-                                    Token(SyntaxKind.PartialKeyword)}))
-                        .WithBaseList(
-                            BaseList(
-                                SingletonSeparatedList<BaseTypeSyntax>(
-                                    SimpleBaseType(
-                                        IdentifierName(typeName)))))
-                        .WithMembers(
-                            SingletonList<MemberDeclarationSyntax>(
-                                PropertyDeclaration(
-                                    IdentifierName("Discriminant"),
-                                    Identifier(discriminantName))
-                                .WithModifiers(
-                                    TokenList(
-                                        new[]{
-                                            Token(SyntaxKind.PublicKeyword),
-                                            Token(SyntaxKind.OverrideKeyword)}))
-                                .WithExpressionBody(
-                                    ArrowExpressionClause(
-                                        MemberAccessExpression(
-                                            SyntaxKind.SimpleMemberAccessExpression,
-                                            IdentifierName("Discriminant"),
-                                            IdentifierName(caseName))))
-                                .WithSemicolonToken(
-                                    Token(SyntaxKind.SemicolonToken))));
+                    var caseName = caseClass.Identifier.ValueText;
+
+                    var caseClassDef = (ClassDeclarationSyntax) DeriveSyntaxGenerator.CreateDeconstructSyntax(
+                        ClassDeclaration(caseName)
+                            .WithAttributeLists(
+                                List<AttributeListSyntax>(caseClassAttributes))
+                            .WithModifiers(
+                                TokenList(
+                                    new[] {
+                                        Token(SyntaxKind.PublicKeyword),
+                                        Token(SyntaxKind.SealedKeyword),
+                                        Token(SyntaxKind.PartialKeyword) }))
+                            .WithBaseList(
+                                BaseList(
+                                    SingletonSeparatedList<BaseTypeSyntax>(
+                                        SimpleBaseType(
+                                            IdentifierName(typeName))))),
+                        original.Members.SelectMany(DeriveSyntaxGenerator.IterateMembers)
+                            .Concat(caseClass.Members.SelectMany(DeriveSyntaxGenerator.IterateMembers))
+                            .ToList());
+
+                    yield return caseClassDef.WithMembers(
+                        caseClassDef.Members.Add(
+                            PropertyDeclaration(
+                                IdentifierName("Discriminant"),
+                                Identifier(discriminantName))
+                            .WithModifiers(
+                                TokenList(
+                                    new[]{
+                                        Token(SyntaxKind.PublicKeyword),
+                                        Token(SyntaxKind.OverrideKeyword)}))
+                            .WithExpressionBody(
+                                ArrowExpressionClause(
+                                    MemberAccessExpression(
+                                        SyntaxKind.SimpleMemberAccessExpression,
+                                        IdentifierName("Discriminant"),
+                                        IdentifierName(caseName))))
+                            .WithSemicolonToken(
+                                Token(SyntaxKind.SemicolonToken))
+                        ) );
                 }
 
                 if (generateJsonConverter)

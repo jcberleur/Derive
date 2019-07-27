@@ -7,10 +7,10 @@ using CodeGeneration.Roslyn;
 [Conditional("CodeGeneration")]
 public class DeriveAttribute : Attribute
 {
-    public DeriveAttribute(Interfaces which)
+    public DeriveAttribute(Impl which)
     {
         Interfaces = which;
     }
 
-    public Interfaces Interfaces { get; }
+    public Impl Interfaces { get; }
 }

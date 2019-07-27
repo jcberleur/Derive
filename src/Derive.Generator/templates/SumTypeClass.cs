@@ -30,7 +30,7 @@ abstract partial class SumTypeClass
         }
     }
 
-    [Newtonsoft.Json.JsonConverter(typeof(SumTypeClass.CaseJsonConverter))]
+    [Newtonsoft.Json.JsonConverter(typeof(SumTypeClass.DefaultConverter))]
     public sealed partial class A : SumTypeClass
     {
         public override Discriminant Case => Discriminant.A;
@@ -64,7 +64,7 @@ abstract partial class SumTypeClass
         public override bool CanConvert(System.Type objectType) => typeof(SumTypeClass).IsAssignableFrom(objectType);
     }
 
-    public class CaseJsonConverter : Newtonsoft.Json.JsonConverter
+    public class DefaultConverter : Newtonsoft.Json.JsonConverter
     {
         public override bool CanWrite => false;
 

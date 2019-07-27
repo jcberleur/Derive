@@ -11,12 +11,12 @@ namespace Derive.Generator
 {
     public class DeriveGenerator : IRichCodeGenerator
     {
-        private readonly Interfaces _which;
+        private readonly Impl _which;
 
         public DeriveGenerator(AttributeData attributeData)
         {
             if (attributeData == null) throw new ArgumentNullException(nameof(attributeData));
-            _which = (Interfaces)attributeData.ConstructorArguments[0].Value;
+            _which = (Impl)attributeData.ConstructorArguments[0].Value;
         }
 
         public Task<SyntaxList<MemberDeclarationSyntax>> GenerateAsync(TransformationContext context, IProgress<Diagnostic> progress, CancellationToken cancellationToken)

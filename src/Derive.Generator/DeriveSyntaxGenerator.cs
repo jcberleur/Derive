@@ -10,12 +10,12 @@ namespace Derive.Generator
 {
     public static class DeriveSyntaxGenerator
     {
-        public static SyntaxList<MemberDeclarationSyntax> CreateSyntax(TypeDeclarationSyntax original, Interfaces interfaces)
+        public static SyntaxList<MemberDeclarationSyntax> CreateSyntax(TypeDeclarationSyntax original, Impl interfaces)
         {
             return List<MemberDeclarationSyntax>(EnumerateSyntax(original, interfaces));
         }
 
-        private static IEnumerable<MemberDeclarationSyntax> EnumerateSyntax(TypeDeclarationSyntax original, Interfaces interfaces)
+        private static IEnumerable<MemberDeclarationSyntax> EnumerateSyntax(TypeDeclarationSyntax original, Impl interfaces)
         {
             var typeName = original.Identifier.ValueText;
             TypeDeclarationSyntax newDeclaration;
@@ -32,17 +32,41 @@ namespace Derive.Generator
             }
             var members = original.Members.SelectMany(IterateMembers).ToList();
 
-            if (interfaces.HasFlag(Interfaces.Equatable))
+            if (interfaces.HasFlag(Impl.Equatable))
             {
                 yield return CreateEquatableSyntax(newDeclaration, members);
             }
-            if (interfaces.HasFlag(Interfaces.Comparable))
+            if (interfaces.HasFlag(Impl.Comparable))
             {
                 yield return CreateComparableSyntax(newDeclaration, members);
             }
+
+            if (interfaces.HasFlag(Impl.Deconstruct))
+            {
+                yield return CreateDeconstructSyntax(newDeclaration, members);
+            }
         }
 
-        private static IEnumerable<(TypeSyntax Type, string Identifier)> IterateMembers(MemberDeclarationSyntax memberDeclarationSyntax)
+        internal static MemberDeclarationSyntax CreateDeconstructSyntax(TypeDeclarationSyntax original)
+        {
+            var typeName = original.Identifier.ValueText;
+            TypeDeclarationSyntax newDeclaration;
+            switch (original)
+            {
+                case StructDeclarationSyntax structDeclarationSyntax:
+                    newDeclaration = StructDeclaration(typeName);
+                    break;
+                case ClassDeclarationSyntax classDeclarationSyntax:
+                    newDeclaration = ClassDeclaration(typeName);
+                    break;
+                default:
+                    throw new NotSupportedException();
+            }
+            var members = original.Members.SelectMany(IterateMembers).ToList();
+            return CreateDeconstructSyntax(newDeclaration, members);
+        }
+
+        internal static IEnumerable<(TypeSyntax Type, string Identifier)> IterateMembers(MemberDeclarationSyntax memberDeclarationSyntax)
         {
             switch (memberDeclarationSyntax)
             {
@@ -59,6 +83,60 @@ namespace Derive.Generator
         }
 
         // Generated using https://roslynquoter.azurewebsites.net/
+
+        internal static MemberDeclarationSyntax CreateDeconstructSyntax(TypeDeclarationSyntax typeDeclaration, List<(TypeSyntax Type, string Identifier)> members)
+        {
+            var typeName = typeDeclaration.Identifier.ValueText;
+
+            string Camel(string name) => $"@{name[0].ToString().ToLower()}{name.Substring(1)}";
+
+            var parameters = members
+                .Select(member => Parameter(
+                        Identifier(Camel(member.Identifier)))
+                    .WithModifiers(
+                        TokenList(
+                            Token(SyntaxKind.OutKeyword)))
+                    .WithType(member.Type))
+                .Aggregate(new List<SyntaxNodeOrToken>(members.Count * 2), (a, current) =>
+                {
+                    if (a.Count != 0)
+                    {
+                        a.Add(Token(SyntaxKind.CommaToken));
+                    }
+                    a.Add(current);
+                    return a;
+                });
+
+            var statements = members
+                .Select(member => ExpressionStatement(
+                                AssignmentExpression(
+                                    SyntaxKind.SimpleAssignmentExpression,
+                                    IdentifierName(Camel(member.Identifier)),
+                                    IdentifierName(member.Identifier))))
+                .ToArray();
+
+            return typeDeclaration
+           .WithModifiers(
+               TokenList(
+                   Token(SyntaxKind.PartialKeyword)))
+           .WithMembers(
+               List<MemberDeclarationSyntax>(
+                   new [] {
+                    MethodDeclaration(
+                        PredefinedType(
+                            Token(SyntaxKind.VoidKeyword)),
+                        Identifier("Deconstruct"))
+                    .WithModifiers(
+                        TokenList(
+                            Token(SyntaxKind.PublicKeyword)))
+                    .WithParameterList(
+                        ParameterList(
+                            SeparatedList<ParameterSyntax>(parameters)))
+                    .WithBody(
+                        Block(statements))
+                   }));
+           }
+
         private static MemberDeclarationSyntax CreateEquatableSyntax(TypeDeclarationSyntax typeDeclaration, List<(TypeSyntax Type, string Identifier)> equatableMembers)
         {
             var typeName = typeDeclaration.Identifier.ValueText;
