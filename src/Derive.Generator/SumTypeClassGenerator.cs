@@ -9,7 +9,7 @@ namespace Derive.Generator
 {
     public static class SumTypeClassGenerator
     {
-        public static SyntaxList<MemberDeclarationSyntax> CreateSyntax(ClassDeclarationSyntax original, string discriminantName, bool generateJsonConverter)
+        public static SyntaxList<MemberDeclarationSyntax> CreateSyntax(ClassDeclarationSyntax original, string discriminantName, bool generateJsonConverter, bool disableConstructor)
         {
             var typeName = original.Identifier.ValueText;
             var cases = original.Members
@@ -21,12 +21,15 @@ namespace Derive.Generator
 
             IEnumerable<MemberDeclarationSyntax> Members()
             {
-                yield return ConstructorDeclaration(
-                            Identifier(typeName))
-                        .WithModifiers(
-                            TokenList(
-                                Token(SyntaxKind.PrivateKeyword)))
-                        .WithBody(Block());
+                if (!disableConstructor)
+                {
+                    yield return ConstructorDeclaration(
+                                Identifier(typeName))
+                            .WithModifiers(
+                                TokenList(
+                                    Token(SyntaxKind.PrivateKeyword)))
+                            .WithBody(Block());
+                }
 
                 yield return PropertyDeclaration(
                         IdentifierName("Discriminant"),

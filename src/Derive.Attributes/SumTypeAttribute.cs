@@ -8,6 +8,11 @@ using CodeGeneration.Roslyn;
 public class SumTypeAttribute : Attribute
 {
     /// <summary>
+    /// Enable generatation of a private constructor to disable non-nested extends.
+    /// </summary>
+    public bool DisableConstructor { get; set; }
+
+    /// <summary>
     /// Name of the property to use as a discriminant enum.
     /// </summary>
     public string DiscriminantName { get; set; }
