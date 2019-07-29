@@ -12,15 +12,14 @@ namespace Derive.Generator
     public class SumTypeGenerator : IRichCodeGenerator
     {
         private readonly string _discriminantName;
-        private readonly bool _jsonConverter;
-        private readonly bool _disableConstructor;
+        private readonly SumTypeOptions _options;
 
         public SumTypeGenerator(AttributeData attributeData)
         {
             if (attributeData == null) throw new ArgumentNullException(nameof(attributeData));
             _discriminantName = (string)attributeData.GetNamedArgumentValue(nameof(SumTypeAttribute.DiscriminantName)) ?? "Case";
-            _jsonConverter = (bool?)attributeData.GetNamedArgumentValue(nameof(SumTypeAttribute.JsonConverter)) ?? false;
-            _disableConstructor = (bool?)attributeData.GetNamedArgumentValue(nameof(SumTypeAttribute.DisableConstructor)) ?? false;
+            var optionsValue = (int)attributeData.GetNamedArgumentValue(nameof(SumTypeAttribute.Options));
+            _options = (SumTypeOptions)optionsValue;
         }
 
         public Task<SyntaxList<MemberDeclarationSyntax>> GenerateAsync(TransformationContext context, IProgress<Diagnostic> progress, CancellationToken cancellationToken)
@@ -37,7 +36,7 @@ namespace Derive.Generator
             switch (applyToType)
             {
                 case ClassDeclarationSyntax classDeclaration:
-                    derive = SumTypeClassGenerator.CreateSyntax(classDeclaration, _discriminantName, _jsonConverter, _disableConstructor);
+                    derive = SumTypeClassGenerator.CreateSyntax(classDeclaration, _discriminantName, _options);
                     break;
                 case StructDeclarationSyntax structDeclaration:
                     derive = SumTypeStructGenerator.CreateSyntax(structDeclaration, _discriminantName);

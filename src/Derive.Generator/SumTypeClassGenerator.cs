@@ -9,7 +9,7 @@ namespace Derive.Generator
 {
     public static class SumTypeClassGenerator
     {
-        public static SyntaxList<MemberDeclarationSyntax> CreateSyntax(ClassDeclarationSyntax original, string discriminantName, bool generateJsonConverter, bool disableConstructor)
+        public static SyntaxList<MemberDeclarationSyntax> CreateSyntax(ClassDeclarationSyntax original, string discriminantName, SumTypeOptions options)
         {
             var typeName = original.Identifier.ValueText;
             var cases = original.Members
@@ -21,7 +21,7 @@ namespace Derive.Generator
 
             IEnumerable<MemberDeclarationSyntax> Members()
             {
-                if (!disableConstructor)
+                if (options.HasFlag(SumTypeOptions.DisableConstructor))
                 {
                     yield return ConstructorDeclaration(
                                 Identifier(typeName))
@@ -341,7 +341,7 @@ namespace Derive.Generator
                 {
                     var caseClassAttributes = new List<AttributeListSyntax>();
 
-                    if (generateJsonConverter)
+                    if (options.HasFlag(SumTypeOptions.EnableJsonConverter))
                     {
                         caseClassAttributes.Add(
                             AttributeList(
@@ -405,7 +405,7 @@ namespace Derive.Generator
                         ) );
                 }
 
-                if (generateJsonConverter)
+                if (options.HasFlag(SumTypeOptions.EnableJsonConverter))
                 {
                     var dictionaryCases = cases.Aggregate(new List<SyntaxNodeOrToken>(), (a, caseName) =>
                     {
@@ -981,7 +981,7 @@ namespace Derive.Generator
             }
 
             var attributes = new List<AttributeListSyntax>();
-            if (generateJsonConverter)
+            if (options.HasFlag(SumTypeOptions.EnableJsonConverter))
             {
                 attributes.Add(
                     AttributeList(

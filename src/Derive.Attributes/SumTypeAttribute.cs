@@ -8,17 +8,32 @@ using CodeGeneration.Roslyn;
 public class SumTypeAttribute : Attribute
 {
     /// <summary>
-    /// Enable generatation of a private constructor to disable non-nested extends.
-    /// </summary>
-    public bool DisableConstructor { get; set; }
-
-    /// <summary>
     /// Name of the property to use as a discriminant enum.
     /// </summary>
     public string DiscriminantName { get; set; }
 
     /// <summary>
+    /// Options to customize the code generation.
+    /// </summary>
+    public SumTypeOptions Options { get; set; }
+}
+
+/// <summary>
+/// Possible Options to customize the code generation.
+/// </summary>
+[Flags]
+public enum SumTypeOptions
+{
+    None = 0,
+
+    /// <summary>
+    /// Enable generatation of a private constructor to disable non-nested extends.
+    /// </summary>
+    DisableConstructor = 1 << 0,
+
+    /// <summary>
     /// Enable generatation of a Newtonsoft.Json.JsonConverter for this type.
     /// </summary>
-    public bool JsonConverter { get; set; }
+    EnableJsonConverter = 1 << 1,
 }
+
