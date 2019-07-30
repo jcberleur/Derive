@@ -10,7 +10,7 @@
       Contains code generator to provide basic implementations for some interfaces.
       See project site for installation instructions and more details.
     </Description>
-    <PackageTags>derive equal equatable comparable ord ordering attribute generator generators generation code codegen codegenerator codegeneration</PackageTags>
+    <PackageTags>derive equal equatable comparable ord ordering sumtype tagged union discriminated attribute generator generators generation code codegen codegenerator codegeneration</PackageTags>
     <NoPackageAnalysis>true</NoPackageAnalysis>
   </PropertyGroup>
 
@@ -27,6 +27,10 @@
     <Compile Remove="templates\Eq.cs" />
     <Compile Remove="templates\SumTypeClass.cs" />
     <Compile Remove="templates\SumTypeStruct.cs" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Update="build\Derive.Generator.props" Pack="true" PackagePath="" />
   </ItemGroup>
 
 </Project>

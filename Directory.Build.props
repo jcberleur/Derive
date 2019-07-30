@@ -1,0 +1,28 @@
+<Project>
+
+  <Import Project="version.props" />
+
+  <PropertyGroup>
+    <Authors>Jean-Christophe Berleur</Authors>
+    <Copyright>Copyright © Jean-Christophe Berleur</Copyright>
+    <NeutralLanguage>en-GB</NeutralLanguage>
+    <PackageRequireLicenseAcceptance>false</PackageRequireLicenseAcceptance>
+    <PackageLicenseUrl>https://raw.githubusercontent.com/jcberleur/Derive/master/LICENSE</PackageLicenseUrl>
+    <PackageProjectUrl>https://github.com/jcberleur/Derive</PackageProjectUrl>
+    <PackageTags>derive equal equatable comparable ord ordering sumtype tagged union discriminated attribute generator generators generation code codegen codegenerator codegeneration</PackageTags>
+    <RepositoryUrl>https://github.com/jcberleur/Derive</RepositoryUrl>
+    <RepositoryType>git</RepositoryType>
+  </PropertyGroup>
+
+  <PropertyGroup>
+    <DebugType>embedded</DebugType>
+    <NoPackageAnalysis>true</NoPackageAnalysis>
+    <LangVersion>7.3</LangVersion>
+    <GeneratePackageOnBuild>True</GeneratePackageOnBuild>
+    <PackageOutputPath>$(SolutionDir)/artifacts</PackageOutputPath>
+    <CodeGenerationRoslynPackagesVersion>0.6.1</CodeGenerationRoslynPackagesVersion>
+  </PropertyGroup>
+
+  <Import Project="releasenotes.props" />
+
+</Project>
