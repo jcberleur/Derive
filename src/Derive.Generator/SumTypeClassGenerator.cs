@@ -123,7 +123,8 @@ namespace Derive.Generator
                                             new SyntaxNodeOrToken[]{
                                                 IdentifierName(memberName),
                                                 Token(SyntaxKind.CommaToken),
-                                                IdentifierName("T")}))))));
+                                                IdentifierName("TReturn")
+                                            }))))));
                     return a;
                 });
 
@@ -186,7 +187,7 @@ namespace Derive.Generator
                                                             Literal("@\"Unreachable\"", "Unreachable")))})))))));
 
                 yield return MethodDeclaration(
-                        IdentifierName("T"),
+                        IdentifierName("TReturn"),
                         Identifier("Match"))
                     .WithModifiers(
                         TokenList(
@@ -195,7 +196,7 @@ namespace Derive.Generator
                         TypeParameterList(
                             SingletonSeparatedList<TypeParameterSyntax>(
                                 TypeParameter(
-                                    Identifier("T")))))
+                                    Identifier("TReturn")))))
                     .WithParameterList(
                         ParameterList(
                             SeparatedList<ParameterSyntax>(matchParameters)))
