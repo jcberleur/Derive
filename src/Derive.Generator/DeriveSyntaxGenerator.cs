@@ -1,4 +1,5 @@
-﻿using Microsoft.CodeAnalysis;
+﻿using CodeGeneration.Roslyn;
+using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
 using System;
@@ -10,14 +11,115 @@ namespace Derive.Generator
 {
     public static class DeriveSyntaxGenerator
     {
-        public static SyntaxList<MemberDeclarationSyntax> CreateSyntax(TypeDeclarationSyntax original, Impl interfaces)
+        public static SyntaxList<MemberDeclarationSyntax> CreateSyntax(TransformationContext context, Impl interfaces)
         {
-            return List<MemberDeclarationSyntax>(EnumerateSyntax(original, interfaces));
+
+            return List<MemberDeclarationSyntax>(EnumerateSyntax(context, interfaces));
         }
 
-        private static IEnumerable<MemberDeclarationSyntax> EnumerateSyntax(TypeDeclarationSyntax original, Impl interfaces)
+        internal static NameSyntax QualifiedName(this SyntaxNode node, bool ignoreGenerics = false, bool stopAtType = false)
         {
-            var typeName = original.Identifier.ValueText;
+            var builder = new List<SimpleNameSyntax>();
+            var loop = true;
+            for (; loop && node != null; node = node.Parent)
+            {
+                switch (node)
+                {
+                    case TypeDeclarationSyntax typeDeclaration:
+                        if (!ignoreGenerics && typeDeclaration.TypeParameterList?.Parameters != null && typeDeclaration.TypeParameterList.Parameters.Count > 0)
+                        {
+                            builder.Add(GenericName(Identifier(typeDeclaration.Identifier.Text),
+                                TypeArgumentList(
+                                    SeparatedList<TypeSyntax>(
+                                        typeDeclaration.TypeParameterList.Parameters
+                                            .Select(p => IdentifierName(p.Identifier.Text))))));
+                        }
+                        else
+                        {
+                            builder.Add(IdentifierName(typeDeclaration.Identifier.Text));
+                        }
+                        break;
+                    case BaseTypeDeclarationSyntax typeDeclaration:
+                        builder.Add(IdentifierName(typeDeclaration.Identifier.Text));
+                        break;
+                    case NamespaceDeclarationSyntax namespaceDeclaration:
+                        if (stopAtType)
+                        {
+                            loop = false;
+                            break;
+                        }
+                        NameSyntax name = namespaceDeclaration.Name;
+                        loop:;
+                        switch (name)
+                        {
+                            case QualifiedNameSyntax qualifiedName:
+                                name = qualifiedName.Left;
+                                builder.Add(qualifiedName.Right.WithoutTrivia());
+                                goto loop;
+
+                            case SimpleNameSyntax simpleNameSyntax:
+                                builder.Add(simpleNameSyntax.WithoutTrivia());
+                                break;
+                        }
+                        break;
+                }
+            }
+            builder.Reverse();
+            return builder
+                .Cast<NameSyntax>()
+                .Aggregate((acc, current) => SyntaxFactory.QualifiedName(acc, (SimpleNameSyntax)current));
+        }
+        public static SimpleNameSyntax Name(this INamedTypeSymbol namedTypeSymbol, bool ignoreGenerics = false)
+        {
+            return !ignoreGenerics && namedTypeSymbol.TypeArguments.Length > 0
+                ? GenericName(Identifier(namedTypeSymbol.Name),
+                    TypeArgumentList(
+                        SeparatedList<TypeSyntax>(
+                            namedTypeSymbol.TypeArguments
+                                .Select(argument => IdentifierName(argument.Name)))))
+                : (SimpleNameSyntax)IdentifierName(namedTypeSymbol.Name);
+        }
+
+        public static NameSyntax FullyQualifiedName(this ITypeSymbol type, bool ignoreGenerics = false)
+        {
+            var builder = new List<SimpleNameSyntax>();
+
+            if (type is ITypeParameterSymbol typeParameter)
+            {
+                return IdentifierName(typeParameter.Name);
+            }
+
+            if (type is INamedTypeSymbol named)
+            {
+                builder.Add(named.Name(ignoreGenerics));
+            }
+            else
+            {
+                builder.Add(IdentifierName(type.Name));
+            }
+            for (var node = type.ContainingType; node != null; node = node.ContainingType)
+            {
+                builder.Add(node.Name(ignoreGenerics));
+            }
+            for (var ns = type.ContainingNamespace; ns != null; ns = ns.ContainingNamespace)
+            {
+                if (ns.Name != "")
+                {
+                    builder.Add(IdentifierName(ns.Name));
+                }
+            }
+            builder.Reverse();
+            return builder
+                .Cast<NameSyntax>()
+                .Aggregate((acc, current) => SyntaxFactory.QualifiedName(acc, (SimpleNameSyntax)current));
+        }
+
+        private static IEnumerable<MemberDeclarationSyntax> EnumerateSyntax(TransformationContext context, Impl interfaces)
+        {
+            var original = (TypeDeclarationSyntax)context.ProcessingNode;
+            var typeName = original.Identifier.Text;
+            var qualifiedTypeName = original.QualifiedName(ignoreGenerics: true, stopAtType: true);
+            var qualifiedName = original.QualifiedName();
             TypeDeclarationSyntax newDeclaration;
             switch (original)
             {
@@ -30,7 +132,21 @@ namespace Derive.Generator
                 default:
                     throw new NotSupportedException();
             }
-            var members = original.Members.SelectMany(IterateMembers).ToList();
+            newDeclaration = newDeclaration
+                .WithModifiers(
+                    TokenList(
+                        Token(SyntaxKind.PartialKeyword)));
+
+            if (original.TypeParameterList != null)
+                newDeclaration = newDeclaration.WithTypeParameterList(original.TypeParameterList);
+
+            var self = context.Compilation
+                .GetSymbolsWithName(typeName, SymbolFilter.Type)
+                .OfType<INamedTypeSymbol>()
+                .SingleOrDefault(type => !type.IsImplicitlyDeclared && type.FullyQualifiedName().ToString() == qualifiedName.ToString())
+                ?? throw new Exception($"Could not find type {qualifiedName}");
+
+            var members = self.IterateMembers().ToList();
 
             if (interfaces.HasFlag(Impl.Equatable))
             {
@@ -41,44 +157,30 @@ namespace Derive.Generator
                 yield return CreateComparableSyntax(newDeclaration, members);
             }
 
-            if (interfaces.HasFlag(Impl.Deconstruct))
+            if (interfaces.HasFlag(Impl.Deconstruct) && members.Count > 0)
             {
                 yield return CreateDeconstructSyntax(newDeclaration, members);
             }
         }
 
-        internal static MemberDeclarationSyntax CreateDeconstructSyntax(TypeDeclarationSyntax original)
+        internal static IEnumerable<(TypeSyntax Type, string Identifier)> IterateMembers(this INamedTypeSymbol namedType)
         {
-            var typeName = original.Identifier.ValueText;
-            TypeDeclarationSyntax newDeclaration;
-            switch (original)
+            for (var type = namedType; type != null; type = type.BaseType)
             {
-                case StructDeclarationSyntax structDeclarationSyntax:
-                    newDeclaration = StructDeclaration(typeName);
-                    break;
-                case ClassDeclarationSyntax classDeclarationSyntax:
-                    newDeclaration = ClassDeclaration(typeName);
-                    break;
-                default:
-                    throw new NotSupportedException();
-            }
-            var members = original.Members.SelectMany(IterateMembers).ToList();
-            return CreateDeconstructSyntax(newDeclaration, members);
-        }
+                foreach (var member in type.GetMembers())
+                {
+                    if (member.IsStatic || member.IsImplicitlyDeclared) continue;
 
-        internal static IEnumerable<(TypeSyntax Type, string Identifier)> IterateMembers(MemberDeclarationSyntax memberDeclarationSyntax)
-        {
-            switch (memberDeclarationSyntax)
-            {
-                case FieldDeclarationSyntax fieldDeclarationSyntax:
-                    foreach (var variableDeclaratorSyntax in fieldDeclarationSyntax.Declaration.Variables)
+                    switch (member)
                     {
-                        yield return (fieldDeclarationSyntax.Declaration.Type, variableDeclaratorSyntax.Identifier.ValueText);
+                        case IFieldSymbol field:
+                            yield return (field.Type.FullyQualifiedName(), field.Name);
+                            break;
+                        case IPropertySymbol property:
+                            yield return (property.Type.FullyQualifiedName(), property.Name);
+                            break;
                     }
-                    break;
-                case PropertyDeclarationSyntax propertyDeclarationSyntax:
-                    yield return (propertyDeclarationSyntax.Type, propertyDeclarationSyntax.Identifier.ValueText);
-                    break;
+                }
             }
         }
 
@@ -86,7 +188,7 @@ namespace Derive.Generator
 
         internal static MemberDeclarationSyntax CreateDeconstructSyntax(TypeDeclarationSyntax typeDeclaration, List<(TypeSyntax Type, string Identifier)> members)
         {
-            var typeName = typeDeclaration.Identifier.ValueText;
+            if (members.Count == 0) return typeDeclaration;
 
             string Camel(string name) => $"@{name[0].ToString().ToLower()}{name.Substring(1)}";
 
@@ -116,12 +218,9 @@ namespace Derive.Generator
                 .ToArray();
 
             return typeDeclaration
-           .WithModifiers(
-               TokenList(
-                   Token(SyntaxKind.PartialKeyword)))
            .WithMembers(
                List<MemberDeclarationSyntax>(
-                   new [] {
+                   new MemberDeclarationSyntax[] {
                     MethodDeclaration(
                         PredefinedType(
                             Token(SyntaxKind.VoidKeyword)),
@@ -139,7 +238,15 @@ namespace Derive.Generator
 
         private static MemberDeclarationSyntax CreateEquatableSyntax(TypeDeclarationSyntax typeDeclaration, List<(TypeSyntax Type, string Identifier)> equatableMembers)
         {
-            var typeName = typeDeclaration.Identifier.ValueText;
+            var typeIdentifier = typeDeclaration.TypeParameterList != null && typeDeclaration.TypeParameterList.Parameters.Count > 0
+                ? (TypeSyntax)GenericName(
+                    Identifier(typeDeclaration.Identifier.ValueText),
+                    TypeArgumentList(
+                        SeparatedList<TypeSyntax>(
+                            typeDeclaration.TypeParameterList.Parameters.Select(x => IdentifierName(x.Identifier.Text)))
+                    ))
+                : IdentifierName(typeDeclaration.Identifier.ValueText);
+
             ExpressionSyntax eqExpr;
             switch (equatableMembers.Count)
             {
@@ -235,23 +342,20 @@ namespace Derive.Generator
                                 SyntaxKind.NullLiteralExpression))));
 
             return typeDeclaration
-        .WithModifiers(
-            TokenList(
-                Token(SyntaxKind.PartialKeyword)))
         .WithBaseList(
             BaseList(
-                SingletonSeparatedList<BaseTypeSyntax>(
-                    SimpleBaseType(
-                        QualifiedName(
+                SingletonSeparatedList(
+(BaseTypeSyntax)SimpleBaseType(
+                        SyntaxFactory.QualifiedName(
                             IdentifierName("System"),
                             GenericName(
                                 Identifier("IEquatable"))
                             .WithTypeArgumentList(
                                 TypeArgumentList(
-                                    SingletonSeparatedList<TypeSyntax>(
-                                        IdentifierName(typeName)))))))))
+                                    SingletonSeparatedList(
+                                        typeIdentifier))))))))
         .WithMembers(
-            List<MemberDeclarationSyntax>(
+            List(
                 new MemberDeclarationSyntax[]{
                     MethodDeclaration(
                         PredefinedType(
@@ -262,11 +366,11 @@ namespace Derive.Generator
                             Token(SyntaxKind.PublicKeyword)))
                     .WithParameterList(
                         ParameterList(
-                            SingletonSeparatedList<ParameterSyntax>(
+                            SingletonSeparatedList(
                                 Parameter(
                                     Identifier("other"))
                                 .WithType(
-                                    IdentifierName(typeName)))))
+                                    typeIdentifier))))
                     .WithExpressionBody(
                         ArrowExpressionClause(eqExpr))
                     .WithSemicolonToken(
@@ -282,7 +386,7 @@ namespace Derive.Generator
                                 Token(SyntaxKind.OverrideKeyword)}))
                     .WithParameterList(
                         ParameterList(
-                            SingletonSeparatedList<ParameterSyntax>(
+                            SingletonSeparatedList(
                                 Parameter(
                                     Identifier("obj"))
                                 .WithType(
@@ -305,14 +409,14 @@ namespace Derive.Generator
                                     IsPatternExpression(
                                         IdentifierName("obj"),
                                         DeclarationPattern(
-                                            IdentifierName(typeName),
+                                            typeIdentifier,
                                             SingleVariableDesignation(
                                                 Identifier("other"))))),
                                 InvocationExpression(
                                     IdentifierName("Equals"))
                                 .WithArgumentList(
                                     ArgumentList(
-                                        SingletonSeparatedList<ArgumentSyntax>(
+                                        SingletonSeparatedList(
                                             Argument(
                                                 IdentifierName("other"))))))))
                     .WithSemicolonToken(
@@ -346,12 +450,12 @@ namespace Derive.Generator
                                     Parameter(
                                         Identifier("left"))
                                     .WithType(
-                                        IdentifierName(typeName)),
+                                        typeIdentifier),
                                     Token(SyntaxKind.CommaToken),
                                     Parameter(
                                         Identifier("right"))
                                     .WithType(
-                                        IdentifierName(typeName))})))
+                                        typeIdentifier)})))
                     .WithExpressionBody(
                         ArrowExpressionClause(eqOpExpr))
                     .WithSemicolonToken(
@@ -372,12 +476,12 @@ namespace Derive.Generator
                                     Parameter(
                                         Identifier("left"))
                                     .WithType(
-                                        IdentifierName(typeName)),
+                                        typeIdentifier),
                                     Token(SyntaxKind.CommaToken),
                                     Parameter(
                                         Identifier("right"))
                                     .WithType(
-                                        IdentifierName(typeName))})))
+                                        typeIdentifier)})))
                     .WithExpressionBody(
                         ArrowExpressionClause(
                             PrefixUnaryExpression(
@@ -393,17 +497,16 @@ namespace Derive.Generator
 
         private static MemberDeclarationSyntax CreateComparableSyntax(TypeDeclarationSyntax typeDeclaration, List<(TypeSyntax Type, string Identifier)> comparableMembers)
         {
-            var typeName = typeDeclaration.Identifier.ValueText;
+            var typeIdentifier = typeDeclaration.TypeParameterList != null && typeDeclaration.TypeParameterList.Parameters.Count > 0
+                ? (TypeSyntax)GenericName(
+                    Identifier(typeDeclaration.Identifier.ValueText),
+                    TypeArgumentList(
+                        SeparatedList<TypeSyntax>(
+                            typeDeclaration.TypeParameterList.Parameters.Select(x => IdentifierName(x.Identifier.Text)))
+                    ))
+                : IdentifierName(typeDeclaration.Identifier.ValueText);
+
             var compareStatements = new List<StatementSyntax>();
-            if(typeDeclaration.IsKind(SyntaxKind.ClassDeclaration))
-                compareStatements.Add(IfStatement(
-                    BinaryExpression(
-                        SyntaxKind.EqualsExpression,
-                        IdentifierName("other"),
-                        LiteralExpression(SyntaxKind.NullLiteralExpression)),
-                    ReturnStatement(
-                        LiteralExpression(SyntaxKind.NumericLiteralExpression,
-                        Literal(1)))));
 
             ExpressionSyntax Compare(TypeSyntax type, string identifier)
             {
@@ -506,29 +609,26 @@ namespace Derive.Generator
             }
 
             return typeDeclaration
-        .WithModifiers(
-            TokenList(
-                Token(SyntaxKind.PartialKeyword)))
         .WithBaseList(
             BaseList(
                 SeparatedList<BaseTypeSyntax>(
                     new SyntaxNodeOrToken[]{
                         SimpleBaseType(
-                            QualifiedName(
+                            SyntaxFactory.QualifiedName(
                                 IdentifierName("System"),
                                 IdentifierName("IComparable"))),
                         Token(SyntaxKind.CommaToken),
                         SimpleBaseType(
-                            QualifiedName(
+                            SyntaxFactory.QualifiedName(
                                 IdentifierName("System"),
                                 GenericName(
                                     Identifier("IComparable"))
                                 .WithTypeArgumentList(
                                     TypeArgumentList(
-                                        SingletonSeparatedList<TypeSyntax>(
-                                            IdentifierName(typeName))))))})))
+                                        SingletonSeparatedList(
+                                            typeIdentifier)))))})))
         .WithMembers(
-            List<MemberDeclarationSyntax>(
+            List(
                 new MemberDeclarationSyntax[]{
                     MethodDeclaration(
                         PredefinedType(
@@ -539,11 +639,11 @@ namespace Derive.Generator
                             Token(SyntaxKind.PublicKeyword)))
                     .WithParameterList(
                         ParameterList(
-                            SingletonSeparatedList<ParameterSyntax>(
+                            SingletonSeparatedList(
                                 Parameter(
                                     Identifier("other"))
                                 .WithType(
-                                    IdentifierName(typeName)))))
+                                    typeIdentifier))))
                     .WithExpressionBody(
                         ArrowExpressionClause(
                             InvocationExpression(
@@ -568,7 +668,7 @@ namespace Derive.Generator
                             Token(SyntaxKind.PublicKeyword)))
                     .WithParameterList(
                         ParameterList(
-                            SingletonSeparatedList<ParameterSyntax>(
+                            SingletonSeparatedList(
                                 Parameter(
                                     Identifier("obj"))
                                 .WithType(
@@ -593,14 +693,14 @@ namespace Derive.Generator
                                         IsPatternExpression(
                                             IdentifierName("obj"),
                                             DeclarationPattern(
-                                                IdentifierName(typeName),
+                                                typeIdentifier,
                                                 SingleVariableDesignation(
                                                     Identifier("other")))))),
                                 Block(
-                                    SingletonList<StatementSyntax>(
-                                        ThrowStatement(
+                                    SingletonList(
+(StatementSyntax)ThrowStatement(
                                             ObjectCreationExpression(
-                                                QualifiedName(
+                                                SyntaxFactory.QualifiedName(
                                                     IdentifierName("System"),
                                                     IdentifierName("ArgumentException")))
                                             .WithArgumentList(
@@ -611,7 +711,7 @@ namespace Derive.Generator
                                                                 InterpolatedStringExpression(
                                                                     Token(SyntaxKind.InterpolatedStringStartToken))
                                                                 .WithContents(
-                                                                    List<InterpolatedStringContentSyntax>(
+                                                                    List(
                                                                         new InterpolatedStringContentSyntax[]{
                                                                             InterpolatedStringText()
                                                                             .WithTextToken(
@@ -644,7 +744,7 @@ namespace Derive.Generator
                                                                     IdentifierName("nameof"))
                                                                 .WithArgumentList(
                                                                     ArgumentList(
-                                                                        SingletonSeparatedList<ArgumentSyntax>(
+                                                                        SingletonSeparatedList(
                                                                             Argument(
                                                                                 IdentifierName("obj"))))))}))))))),
                             ReturnStatement(
@@ -652,7 +752,7 @@ namespace Derive.Generator
                                     IdentifierName("CompareTo"))
                                 .WithArgumentList(
                                     ArgumentList(
-                                        SingletonSeparatedList<ArgumentSyntax>(
+                                        SingletonSeparatedList(
                                             Argument(
                                                 IdentifierName("other")))))))),
                     MethodDeclaration(
@@ -671,12 +771,12 @@ namespace Derive.Generator
                                         Parameter(
                                             Identifier("left"))
                                         .WithType(
-                                            IdentifierName(typeName)),
+                                            typeIdentifier),
                                         Token(SyntaxKind.CommaToken),
                                         Parameter(
                                             Identifier("right"))
                                         .WithType(
-                                            IdentifierName(typeName))})))
+                                            typeIdentifier)})))
                     .WithBody(
                         Block(compareStatements)),
                     OperatorDeclaration(
@@ -695,12 +795,12 @@ namespace Derive.Generator
                                     Parameter(
                                         Identifier("left"))
                                     .WithType(
-                                        IdentifierName(typeName)),
+                                        typeIdentifier),
                                     Token(SyntaxKind.CommaToken),
                                     Parameter(
                                         Identifier("right"))
                                     .WithType(
-                                        IdentifierName(typeName))})))
+                                        typeIdentifier)})))
                     .WithExpressionBody(
                         ArrowExpressionClause(
                             BinaryExpression(
@@ -737,12 +837,12 @@ namespace Derive.Generator
                                     Parameter(
                                         Identifier("left"))
                                     .WithType(
-                                        IdentifierName(typeName)),
+                                        typeIdentifier),
                                     Token(SyntaxKind.CommaToken),
                                     Parameter(
                                         Identifier("right"))
                                     .WithType(
-                                        IdentifierName(typeName))})))
+                                        typeIdentifier)})))
                     .WithExpressionBody(
                         ArrowExpressionClause(
                             BinaryExpression(
@@ -779,12 +879,12 @@ namespace Derive.Generator
                                     Parameter(
                                         Identifier("left"))
                                     .WithType(
-                                        IdentifierName(typeName)),
+                                        typeIdentifier),
                                     Token(SyntaxKind.CommaToken),
                                     Parameter(
                                         Identifier("right"))
                                     .WithType(
-                                        IdentifierName(typeName))})))
+                                        typeIdentifier)})))
                     .WithExpressionBody(
                         ArrowExpressionClause(
                             BinaryExpression(
@@ -821,12 +921,12 @@ namespace Derive.Generator
                                     Parameter(
                                         Identifier("left"))
                                     .WithType(
-                                        IdentifierName(typeName)),
+                                        typeIdentifier),
                                     Token(SyntaxKind.CommaToken),
                                     Parameter(
                                         Identifier("right"))
                                     .WithType(
-                                        IdentifierName(typeName))})))
+                                        typeIdentifier)})))
                     .WithExpressionBody(
                         ArrowExpressionClause(
                             BinaryExpression(

@@ -64,6 +64,33 @@ abstract partial class SumTypeClass
         public override bool CanConvert(System.Type objectType) => typeof(SumTypeClass).IsAssignableFrom(objectType);
     }
 
+    public class ResultJsonConverter : Newtonsoft.Json.JsonConverter
+    {
+        private readonly System.Collections.Concurrent.ConcurrentDictionary<(Type, Type), JsonConverter> _cache = new System.Collections.Concurrent.ConcurrentDictionary<(Type, Type), JsonConverter>();
+
+        public override bool CanWrite => false;
+
+        public override void WriteJson(Newtonsoft.Json.JsonWriter writer, object value, Newtonsoft.Json.JsonSerializer serializer)
+        {
+            throw new System.NotSupportedException("Unnecessary because CanWrite is false. The type will skip the converter.");
+        }
+
+        public override object ReadJson(Newtonsoft.Json.JsonReader reader, Type objectType, object existingValue, Newtonsoft.Json.JsonSerializer serializer)
+        {
+            return ResolveJsonConverter(objectType).ReadJson(reader, objectType, existingValue, serializer);
+        }
+
+        private JsonConverter ResolveJsonConverter(Type objectType)
+        {
+            var arguments = objectType.GetTypeInfo().GenericTypeArguments;
+            return _cache.GetOrAdd(
+                (arguments[0], arguments[1]),
+                tuple => (JsonConverter)Activator.CreateInstance(typeof(ResultJsonConverter<,>).MakeGenericType(tuple.Item1, tuple.Item2)));
+        }
+
+        public override bool CanConvert(System.Type objectType) => objectType.IsGenericType && objectType.GetGenericTypeDefinition() == typeof(Result<,>);
+    }
+
     public class DefaultConverter : Newtonsoft.Json.JsonConverter
     {
         public override bool CanWrite => false;

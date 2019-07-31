@@ -1,4 +1,5 @@
-﻿using Microsoft.CodeAnalysis;
+﻿using CodeGeneration.Roslyn;
+using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
 using System.Collections.Generic;
@@ -9,8 +10,9 @@ namespace Derive.Generator
 {
     public static class SumTypeStructGenerator
     {
-        public static SyntaxList<MemberDeclarationSyntax> CreateSyntax(StructDeclarationSyntax original, string discriminantName)
+        public static SyntaxList<MemberDeclarationSyntax> CreateSyntax(TransformationContext context, string discriminantName)
         {
+            var original = (StructDeclarationSyntax)context.ProcessingNode;
             var typeName = original.Identifier.ValueText;
             var cases = original.Members
                 .OfType<TypeDeclarationSyntax>()

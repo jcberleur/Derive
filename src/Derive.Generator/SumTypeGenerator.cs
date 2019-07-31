@@ -18,8 +18,7 @@ namespace Derive.Generator
         {
             if (attributeData == null) throw new ArgumentNullException(nameof(attributeData));
             _discriminantName = (string)attributeData.GetNamedArgumentValue(nameof(SumTypeAttribute.DiscriminantName)) ?? "Case";
-            var optionsValue = (int)attributeData.GetNamedArgumentValue(nameof(SumTypeAttribute.Options));
-            _options = (SumTypeOptions)optionsValue;
+            _options = (SumTypeOptions) ((int?)attributeData.GetNamedArgumentValue(nameof(SumTypeAttribute.Options)) ?? 0);
         }
 
         public Task<SyntaxList<MemberDeclarationSyntax>> GenerateAsync(TransformationContext context, IProgress<Diagnostic> progress, CancellationToken cancellationToken)
@@ -29,17 +28,14 @@ namespace Derive.Generator
 
         public Task<RichGenerationResult> GenerateRichAsync(TransformationContext context, IProgress<Diagnostic> progress, CancellationToken cancellationToken)
         {
-            var applyToType = (TypeDeclarationSyntax)context.ProcessingNode;
-
-
             SyntaxList<MemberDeclarationSyntax> derive;
-            switch (applyToType)
+            switch (context.ProcessingNode)
             {
                 case ClassDeclarationSyntax classDeclaration:
-                    derive = SumTypeClassGenerator.CreateSyntax(classDeclaration, _discriminantName, _options);
+                    derive = SumTypeClassGenerator.CreateSyntax(context, _discriminantName, _options);
                     break;
                 case StructDeclarationSyntax structDeclaration:
-                    derive = SumTypeStructGenerator.CreateSyntax(structDeclaration, _discriminantName);
+                    derive = SumTypeStructGenerator.CreateSyntax(context, _discriminantName);
                     break;
                 default:
                     throw new NotSupportedException();
@@ -48,9 +44,20 @@ namespace Derive.Generator
             // Figure out ancestry for the generated type, including nesting types and namespaces.
             var wrappedMembers = SyntaxFactory.List(derive.WrapWithAncestors(context.ProcessingNode).Select(n => n.NormalizeWhitespace()));
 
+            var usings = _options.HasFlag(SumTypeOptions.EnableJsonConverter)
+                ? SyntaxFactory.List(new[]
+                {
+                    SyntaxFactory.UsingDirective(
+                        SyntaxFactory.QualifiedName(
+                            SyntaxFactory.IdentifierName("System"),
+                            SyntaxFactory.IdentifierName("Reflection"))),
+                })
+                : SyntaxFactory.List<UsingDirectiveSyntax>();
+
             return Task.FromResult(new RichGenerationResult
             {
                 Members = wrappedMembers,
+                Usings = usings
             });
         }
     }

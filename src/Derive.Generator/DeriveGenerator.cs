@@ -26,9 +26,7 @@ namespace Derive.Generator
 
         public Task<RichGenerationResult> GenerateRichAsync(TransformationContext context, IProgress<Diagnostic> progress, CancellationToken cancellationToken)
         {
-            var applyToType = (TypeDeclarationSyntax)context.ProcessingNode;
-
-            var derive = DeriveSyntaxGenerator.CreateSyntax(applyToType, _which);
+            var derive = DeriveSyntaxGenerator.CreateSyntax(context, _which);
 
             // Figure out ancestry for the generated type, including nesting types and namespaces.
             var wrappedMembers = SyntaxFactory.List(derive.WrapWithAncestors(context.ProcessingNode).Select(n => n.NormalizeWhitespace()));
