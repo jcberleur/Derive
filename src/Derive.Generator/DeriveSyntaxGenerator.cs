@@ -54,9 +54,18 @@ namespace Derive.Generator
             {
                 yield return CreateEquatableSyntax(newDeclaration, members);
             }
+            if (interfaces.HasFlag(Impl.IStructuralEquatable))
+            {
+                yield return CreateStructuralEquatableSyntax(newDeclaration, members);
+            }
+
             if (interfaces.HasFlag(Impl.Comparable))
             {
                 yield return CreateComparableSyntax(newDeclaration, members);
+            }
+            if (interfaces.HasFlag(Impl.IStructuralComparable))
+            {
+                yield return CreateStructuralComparableSyntax(newDeclaration, members);
             }
 
             if (interfaces.HasFlag(Impl.Deconstruct) && members.Count > 0)
@@ -389,6 +398,191 @@ namespace Derive.Generator
                                         IdentifierName("right"))))))
                     .WithSemicolonToken(
                         Token(SyntaxKind.SemicolonToken))}));
+        }
+
+        private static MemberDeclarationSyntax CreateStructuralEquatableSyntax(TypeDeclarationSyntax typeDeclaration, List<(TypeSyntax Type, string Identifier)> members)
+        {
+            var typeIdentifier = typeDeclaration.Identifier();
+
+            ExpressionSyntax eqExpr;
+            BlockSyntax hashCodeBlock;
+            switch (members.Count)
+            {
+                case 0:
+                    eqExpr = LiteralExpression(SyntaxKind.TrueLiteralExpression);
+                    hashCodeBlock = Block(
+                        ReturnStatement(
+                            LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(0))));
+                    break;
+                case 1:
+                    hashCodeBlock = Block(
+                        ReturnStatement(
+                            InvocationExpression(
+                                MemberAccessExpression(
+                                    SyntaxKind.SimpleMemberAccessExpression,
+                                    IdentifierName("comparer"),
+                                    IdentifierName("GetHashCode")))
+                            .WithArgumentList(
+                                ArgumentList(
+                                    SingletonSeparatedList<ArgumentSyntax>(
+                                        Argument(
+                                            IdentifierName(members[0].Identifier)))))));
+                    goto eqDefault;
+                default:
+
+                    var arguments = members
+                        .Select(member => (SyntaxNodeOrToken)Argument(IdentifierName(member.Identifier)))
+                        .Aggregate(new List<SyntaxNodeOrToken>(members.Count * 2), (a, current) =>
+                        {
+                            if (a.Count != 0)
+                            {
+                                a.Add(Token(SyntaxKind.CommaToken));
+                            }
+                            a.Add(current);
+                            return a;
+                        });
+                    hashCodeBlock = Block(
+                        LocalDeclarationStatement(
+                            VariableDeclaration(
+                                QualifiedName(
+                                    QualifiedName(
+                                        IdentifierName("System"),
+                                        IdentifierName("Collections")),
+                                    IdentifierName("IStructuralEquatable")))
+                            .WithVariables(
+                                SingletonSeparatedList<VariableDeclaratorSyntax>(
+                                    VariableDeclarator(
+                                        Identifier("tuple"))
+                                    .WithInitializer(
+                                        EqualsValueClause(
+                                            TupleExpression(
+                                                SeparatedList<ArgumentSyntax>(arguments))))))),
+                        ReturnStatement(
+                            InvocationExpression(
+                                MemberAccessExpression(
+                                    SyntaxKind.SimpleMemberAccessExpression,
+                                    IdentifierName("tuple"),
+                                    IdentifierName("GetHashCode")))
+                            .WithArgumentList(
+                                ArgumentList(
+                                    SingletonSeparatedList<ArgumentSyntax>(
+                                        Argument(
+                                            IdentifierName("comparer")))))));
+
+                    eqDefault:;
+                    eqExpr = members
+                        .Select(member => (ExpressionSyntax)InvocationExpression(
+                                    MemberAccessExpression(
+                                        SyntaxKind.SimpleMemberAccessExpression,
+                                        IdentifierName("comparer"),
+                                        IdentifierName("Equals")))
+                                .WithArgumentList(
+                                    ArgumentList(
+                                        SeparatedList<ArgumentSyntax>(
+                                            new SyntaxNodeOrToken[]{
+                                                Argument(
+                                                    IdentifierName(member.Identifier)),
+                                                Token(SyntaxKind.CommaToken),
+                                                Argument(
+                                                    MemberAccessExpression(
+                                                        SyntaxKind.SimpleMemberAccessExpression,
+                                                        IdentifierName("objOther"),
+                                                        IdentifierName(member.Identifier)))
+                                            }))))
+                        .Aggregate((accumulator, current) => BinaryExpression(SyntaxKind.LogicalAndExpression, accumulator, current));
+                    break;
+            }
+
+            return typeDeclaration
+        .WithBaseList(
+            BaseList(
+                SingletonSeparatedList<BaseTypeSyntax>(
+                    SimpleBaseType(
+                        QualifiedName(
+                            QualifiedName(
+                                IdentifierName("System"),
+                                IdentifierName("Collections")),
+                            IdentifierName("IStructuralEquatable"))))))
+        .WithMembers(
+            List<MemberDeclarationSyntax>(new[]
+            {
+                MethodDeclaration(
+                    PredefinedType(
+                        Token(SyntaxKind.BoolKeyword)),
+                    Identifier("Equals"))
+                .WithExplicitInterfaceSpecifier(
+                    ExplicitInterfaceSpecifier(
+                        QualifiedName(
+                            QualifiedName(
+                                IdentifierName("System"),
+                                IdentifierName("Collections")),
+                            IdentifierName("IStructuralEquatable"))))
+                .WithParameterList(
+                    ParameterList(
+                        SeparatedList<ParameterSyntax>(
+                            new SyntaxNodeOrToken[]{
+                                Parameter(
+                                    Identifier("other"))
+                                .WithType(
+                                    PredefinedType(
+                                        Token(SyntaxKind.ObjectKeyword))),
+                                Token(SyntaxKind.CommaToken),
+                                Parameter(
+                                    Identifier("comparer"))
+                                .WithType(
+                                    QualifiedName(
+                                        QualifiedName(
+                                            IdentifierName("System"),
+                                            IdentifierName("Collections")),
+                                        IdentifierName("IEqualityComparer")))})))
+                .WithBody(
+                    Block(
+                        IfStatement(
+                            BinaryExpression(
+                                SyntaxKind.LogicalOrExpression,
+                                BinaryExpression(
+                                    SyntaxKind.EqualsExpression,
+                                    IdentifierName("other"),
+                                    LiteralExpression(
+                                        SyntaxKind.NullLiteralExpression)),
+                                PrefixUnaryExpression(
+                                    SyntaxKind.LogicalNotExpression,
+                                    ParenthesizedExpression(
+                                        IsPatternExpression(
+                                            IdentifierName("other"),
+                                            DeclarationPattern(
+                                                typeIdentifier,
+                                                SingleVariableDesignation(
+                                                    Identifier("objOther"))))))),
+                            ReturnStatement(
+                                LiteralExpression(
+                                    SyntaxKind.FalseLiteralExpression))),
+                        ReturnStatement(eqExpr))),
+
+                MethodDeclaration(
+                    PredefinedType(
+                        Token(SyntaxKind.IntKeyword)),
+                    Identifier("GetHashCode"))
+                .WithExplicitInterfaceSpecifier(
+                    ExplicitInterfaceSpecifier(
+                        QualifiedName(
+                            QualifiedName(
+                                IdentifierName("System"),
+                                IdentifierName("Collections")),
+                            IdentifierName("IStructuralEquatable"))))
+                .WithParameterList(
+                    ParameterList(
+                        SingletonSeparatedList<ParameterSyntax>(
+                            Parameter(
+                                Identifier("comparer"))
+                            .WithType(
+                                QualifiedName(
+                                    QualifiedName(
+                                        IdentifierName("System"),
+                                        IdentifierName("Collections")),
+                                    IdentifierName("IEqualityComparer"))))))
+                .WithBody(hashCodeBlock)
+            }));
         }
 
         private static MemberDeclarationSyntax CreateComparableSyntax(TypeDeclarationSyntax typeDeclaration, List<(TypeSyntax Type, string Identifier)> comparableMembers)
@@ -837,6 +1031,198 @@ namespace Derive.Generator
                     .WithSemicolonToken(
                         Token(SyntaxKind.SemicolonToken))
                 }));
+        }
+        private static MemberDeclarationSyntax CreateStructuralComparableSyntax(TypeDeclarationSyntax typeDeclaration, List<(TypeSyntax Type, string Identifier)> members)
+        {
+            var typeIdentifier = typeDeclaration.Identifier();
+
+            var compareStatements = new List<StatementSyntax>
+            {
+                IfStatement(
+                    BinaryExpression(
+                        SyntaxKind.EqualsExpression,
+                        IdentifierName("other"),
+                        LiteralExpression(
+                            SyntaxKind.NullLiteralExpression)),
+                    ReturnStatement(
+                        LiteralExpression(
+                            SyntaxKind.NumericLiteralExpression,
+                            Literal(1)))),
+                IfStatement(
+                    PrefixUnaryExpression(
+                        SyntaxKind.LogicalNotExpression,
+                        ParenthesizedExpression(
+                            IsPatternExpression(
+                                IdentifierName("other"),
+                                DeclarationPattern(
+                                    typeIdentifier,
+                                    SingleVariableDesignation(
+                                        Identifier("objOther")))))),
+                    Block(
+                        SingletonList<StatementSyntax>(
+                            ThrowStatement(
+                                ObjectCreationExpression(
+                                    QualifiedName(
+                                        IdentifierName("System"),
+                                        IdentifierName("ArgumentException")))
+                                .WithArgumentList(
+                                    ArgumentList(
+                                        SeparatedList<ArgumentSyntax>(
+                                            new SyntaxNodeOrToken[]{
+                                                Argument(
+                                                    InterpolatedStringExpression(
+                                                        Token(SyntaxKind.InterpolatedStringStartToken))
+                                                    .WithContents(
+                                                        List<InterpolatedStringContentSyntax>(
+                                                            new InterpolatedStringContentSyntax[]{
+                                                                InterpolatedStringText()
+                                                                .WithTextToken(
+                                                                    Token(
+                                                                        TriviaList(),
+                                                                        SyntaxKind.InterpolatedStringTextToken,
+                                                                        "Argument must be of type ",
+                                                                        "Argument must be of type ",
+                                                                        TriviaList())),
+                                                                Interpolation(
+                                                                    InvocationExpression(
+                                                                        IdentifierName("GetType")))}))),
+                                                Token(SyntaxKind.CommaToken),
+                                                Argument(
+                                                    InvocationExpression(
+                                                        IdentifierName("nameof"))
+                                                    .WithArgumentList(
+                                                        ArgumentList(
+                                                            SingletonSeparatedList<ArgumentSyntax>(
+                                                                Argument(
+                                                                    IdentifierName("other"))))))}))))))),
+            };
+
+            ExpressionSyntax Compare(string identifier)
+            {
+                return InvocationExpression(
+                            MemberAccessExpression(
+                                SyntaxKind.SimpleMemberAccessExpression,
+                                IdentifierName("comparer"),
+                                IdentifierName("Compare")))
+                        .WithArgumentList(
+                            ArgumentList(
+                                SeparatedList<ArgumentSyntax>(
+                                    new SyntaxNodeOrToken[]{
+                                        Argument(
+                                            IdentifierName(identifier)),
+                                        Token(SyntaxKind.CommaToken),
+                                        Argument(
+                                            MemberAccessExpression(
+                                                SyntaxKind.SimpleMemberAccessExpression,
+                                                IdentifierName("objOther"),
+                                                IdentifierName(identifier)))})));
+            }
+
+            (TypeSyntax Type, string Identifier) member;
+            switch (members.Count)
+            {
+                case 0:
+                    compareStatements.Add(ReturnStatement(LiteralExpression(SyntaxKind.NumericLiteralExpression, Literal(0))));
+                    break;
+                case 1:
+                    member = members.Single();
+                    compareStatements.Add(ReturnStatement(Compare(member.Identifier)));
+                    break;
+                default:
+
+                    member = members[0];
+                    compareStatements.Add(LocalDeclarationStatement(
+                        VariableDeclaration(
+                            IdentifierName("var"))
+                        .WithVariables(
+                            SingletonSeparatedList<VariableDeclaratorSyntax>(
+                                VariableDeclarator(
+                                    Identifier("c"))
+                                .WithInitializer(
+                                    EqualsValueClause(
+                                        Compare(member.Identifier)))))));
+
+                    compareStatements.Add(
+                        IfStatement(
+                            BinaryExpression(
+                                SyntaxKind.NotEqualsExpression,
+                                IdentifierName("c"),
+                                LiteralExpression(
+                                    SyntaxKind.NumericLiteralExpression,
+                                    Literal(0))),
+                            ReturnStatement(IdentifierName("c"))));
+
+                    for (var i = 1; i < members.Count - 1; i++)
+                    {
+                        member = members[i];
+                        compareStatements.Add(
+                            ExpressionStatement(
+                                AssignmentExpression(
+                                    SyntaxKind.SimpleAssignmentExpression,
+                                    IdentifierName("c"),
+                                    Compare(member.Identifier))));
+
+                        compareStatements.Add(
+                            IfStatement(
+                                BinaryExpression(
+                                    SyntaxKind.NotEqualsExpression,
+                                    IdentifierName("c"),
+                                    LiteralExpression(
+                                        SyntaxKind.NumericLiteralExpression,
+                                        Literal(0))),
+                                ReturnStatement(IdentifierName("c"))));
+                    }
+
+                    member = members[members.Count - 1];
+                    compareStatements.Add(ReturnStatement(Compare(member.Identifier)));
+                    break;
+            }
+
+            return typeDeclaration
+        .WithBaseList(
+            BaseList(
+                SingletonSeparatedList<BaseTypeSyntax>(
+                    SimpleBaseType(
+                        QualifiedName(
+                            QualifiedName(
+                                IdentifierName("System"),
+                                IdentifierName("Collections")),
+                            IdentifierName("IStructuralComparable"))))))
+        .WithMembers(
+            List<MemberDeclarationSyntax>(new[]
+            {
+                MethodDeclaration(
+                    PredefinedType(
+                        Token(SyntaxKind.IntKeyword)),
+                    Identifier("CompareTo"))
+                .WithExplicitInterfaceSpecifier(
+                    ExplicitInterfaceSpecifier(
+                        QualifiedName(
+                            QualifiedName(
+                                IdentifierName("System"),
+                                IdentifierName("Collections")),
+                            IdentifierName("IStructuralComparable"))))
+                .WithParameterList(
+                    ParameterList(
+                        SeparatedList<ParameterSyntax>(
+                            new SyntaxNodeOrToken[]{
+                                Parameter(
+                                    Identifier("other"))
+                                .WithType(
+                                    PredefinedType(
+                                        Token(SyntaxKind.ObjectKeyword))),
+                                Token(SyntaxKind.CommaToken),
+                                Parameter(
+                                    Identifier("comparer"))
+                                .WithType(
+                                    QualifiedName(
+                                        QualifiedName(
+                                            IdentifierName("System"),
+                                            IdentifierName("Collections")),
+                                        IdentifierName("IComparer")))})))
+                .WithBody(
+                    Block(compareStatements))
+            }));
         }
 
     }

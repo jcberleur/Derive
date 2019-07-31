@@ -25,6 +25,8 @@
   <ItemGroup>
     <Compile Remove="templates\Ord.cs" />
     <Compile Remove="templates\Eq.cs" />
+    <Compile Remove="templates\StructuralEq.cs" />
+    <Compile Remove="templates\StructuralOrd.cs" />
     <Compile Remove="templates\SumTypeClass.cs" />
     <Compile Remove="templates\SumTypeStruct.cs" />
   </ItemGroup>
