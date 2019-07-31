@@ -13,105 +13,7 @@ namespace Derive.Generator
     {
         public static SyntaxList<MemberDeclarationSyntax> CreateSyntax(TransformationContext context, Impl interfaces)
         {
-
             return List<MemberDeclarationSyntax>(EnumerateSyntax(context, interfaces));
-        }
-
-        internal static NameSyntax QualifiedName(this SyntaxNode node, bool ignoreGenerics = false, bool stopAtType = false)
-        {
-            var builder = new List<SimpleNameSyntax>();
-            var loop = true;
-            for (; loop && node != null; node = node.Parent)
-            {
-                switch (node)
-                {
-                    case TypeDeclarationSyntax typeDeclaration:
-                        if (!ignoreGenerics && typeDeclaration.TypeParameterList?.Parameters != null && typeDeclaration.TypeParameterList.Parameters.Count > 0)
-                        {
-                            builder.Add(GenericName(Identifier(typeDeclaration.Identifier.Text),
-                                TypeArgumentList(
-                                    SeparatedList<TypeSyntax>(
-                                        typeDeclaration.TypeParameterList.Parameters
-                                            .Select(p => IdentifierName(p.Identifier.Text))))));
-                        }
-                        else
-                        {
-                            builder.Add(IdentifierName(typeDeclaration.Identifier.Text));
-                        }
-                        break;
-                    case BaseTypeDeclarationSyntax typeDeclaration:
-                        builder.Add(IdentifierName(typeDeclaration.Identifier.Text));
-                        break;
-                    case NamespaceDeclarationSyntax namespaceDeclaration:
-                        if (stopAtType)
-                        {
-                            loop = false;
-                            break;
-                        }
-                        NameSyntax name = namespaceDeclaration.Name;
-                        loop:;
-                        switch (name)
-                        {
-                            case QualifiedNameSyntax qualifiedName:
-                                name = qualifiedName.Left;
-                                builder.Add(qualifiedName.Right.WithoutTrivia());
-                                goto loop;
-
-                            case SimpleNameSyntax simpleNameSyntax:
-                                builder.Add(simpleNameSyntax.WithoutTrivia());
-                                break;
-                        }
-                        break;
-                }
-            }
-            builder.Reverse();
-            return builder
-                .Cast<NameSyntax>()
-                .Aggregate((acc, current) => SyntaxFactory.QualifiedName(acc, (SimpleNameSyntax)current));
-        }
-        public static SimpleNameSyntax Name(this INamedTypeSymbol namedTypeSymbol, bool ignoreGenerics = false)
-        {
-            return !ignoreGenerics && namedTypeSymbol.TypeArguments.Length > 0
-                ? GenericName(Identifier(namedTypeSymbol.Name),
-                    TypeArgumentList(
-                        SeparatedList<TypeSyntax>(
-                            namedTypeSymbol.TypeArguments
-                                .Select(argument => IdentifierName(argument.Name)))))
-                : (SimpleNameSyntax)IdentifierName(namedTypeSymbol.Name);
-        }
-
-        public static NameSyntax FullyQualifiedName(this ITypeSymbol type, bool ignoreGenerics = false)
-        {
-            var builder = new List<SimpleNameSyntax>();
-
-            if (type is ITypeParameterSymbol typeParameter)
-            {
-                return IdentifierName(typeParameter.Name);
-            }
-
-            if (type is INamedTypeSymbol named)
-            {
-                builder.Add(named.Name(ignoreGenerics));
-            }
-            else
-            {
-                builder.Add(IdentifierName(type.Name));
-            }
-            for (var node = type.ContainingType; node != null; node = node.ContainingType)
-            {
-                builder.Add(node.Name(ignoreGenerics));
-            }
-            for (var ns = type.ContainingNamespace; ns != null; ns = ns.ContainingNamespace)
-            {
-                if (ns.Name != "")
-                {
-                    builder.Add(IdentifierName(ns.Name));
-                }
-            }
-            builder.Reverse();
-            return builder
-                .Cast<NameSyntax>()
-                .Aggregate((acc, current) => SyntaxFactory.QualifiedName(acc, (SimpleNameSyntax)current));
         }
 
         private static IEnumerable<MemberDeclarationSyntax> EnumerateSyntax(TransformationContext context, Impl interfaces)
@@ -238,14 +140,7 @@ namespace Derive.Generator
 
         private static MemberDeclarationSyntax CreateEquatableSyntax(TypeDeclarationSyntax typeDeclaration, List<(TypeSyntax Type, string Identifier)> equatableMembers)
         {
-            var typeIdentifier = typeDeclaration.TypeParameterList != null && typeDeclaration.TypeParameterList.Parameters.Count > 0
-                ? (TypeSyntax)GenericName(
-                    Identifier(typeDeclaration.Identifier.ValueText),
-                    TypeArgumentList(
-                        SeparatedList<TypeSyntax>(
-                            typeDeclaration.TypeParameterList.Parameters.Select(x => IdentifierName(x.Identifier.Text)))
-                    ))
-                : IdentifierName(typeDeclaration.Identifier.ValueText);
+            var typeIdentifier = typeDeclaration.Identifier();
 
             ExpressionSyntax eqExpr;
             switch (equatableMembers.Count)
@@ -287,7 +182,8 @@ namespace Derive.Generator
                                                 MemberAccessExpression(
                                                     SyntaxKind.SimpleMemberAccessExpression,
                                                     IdentifierName("other"),
-                                                    IdentifierName(member.Identifier)))}))))
+                                                    IdentifierName(member.Identifier)))
+                                        }))))
                         .Aggregate((accumulator, current) => BinaryExpression(SyntaxKind.LogicalAndExpression, accumulator, current));
                     break;
             }
@@ -346,13 +242,13 @@ namespace Derive.Generator
             BaseList(
                 SingletonSeparatedList(
 (BaseTypeSyntax)SimpleBaseType(
-                        SyntaxFactory.QualifiedName(
+                        QualifiedName(
                             IdentifierName("System"),
                             GenericName(
                                 Identifier("IEquatable"))
                             .WithTypeArgumentList(
                                 TypeArgumentList(
-                                    SingletonSeparatedList(
+                                    SingletonSeparatedList<TypeSyntax>(
                                         typeIdentifier))))))))
         .WithMembers(
             List(
@@ -497,14 +393,7 @@ namespace Derive.Generator
 
         private static MemberDeclarationSyntax CreateComparableSyntax(TypeDeclarationSyntax typeDeclaration, List<(TypeSyntax Type, string Identifier)> comparableMembers)
         {
-            var typeIdentifier = typeDeclaration.TypeParameterList != null && typeDeclaration.TypeParameterList.Parameters.Count > 0
-                ? (TypeSyntax)GenericName(
-                    Identifier(typeDeclaration.Identifier.ValueText),
-                    TypeArgumentList(
-                        SeparatedList<TypeSyntax>(
-                            typeDeclaration.TypeParameterList.Parameters.Select(x => IdentifierName(x.Identifier.Text)))
-                    ))
-                : IdentifierName(typeDeclaration.Identifier.ValueText);
+            var typeIdentifier = typeDeclaration.Identifier();
 
             var compareStatements = new List<StatementSyntax>();
 
@@ -614,18 +503,18 @@ namespace Derive.Generator
                 SeparatedList<BaseTypeSyntax>(
                     new SyntaxNodeOrToken[]{
                         SimpleBaseType(
-                            SyntaxFactory.QualifiedName(
+                            QualifiedName(
                                 IdentifierName("System"),
                                 IdentifierName("IComparable"))),
                         Token(SyntaxKind.CommaToken),
                         SimpleBaseType(
-                            SyntaxFactory.QualifiedName(
+                            QualifiedName(
                                 IdentifierName("System"),
                                 GenericName(
                                     Identifier("IComparable"))
                                 .WithTypeArgumentList(
                                     TypeArgumentList(
-                                        SingletonSeparatedList(
+                                        SingletonSeparatedList<TypeSyntax>(
                                             typeIdentifier)))))})))
         .WithMembers(
             List(
