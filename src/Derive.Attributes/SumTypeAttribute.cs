@@ -2,7 +2,7 @@
 using System.Diagnostics;
 using CodeGeneration.Roslyn;
 
-[AttributeUsage(AttributeTargets.Struct | AttributeTargets.Class, Inherited = false, AllowMultiple = false)]
+[AttributeUsage(AttributeTargets.Class, Inherited = false, AllowMultiple = false)]
 [CodeGenerationAttribute("Derive.Generator.SumTypeGenerator, Derive.Generator")]
 [Conditional("CodeGeneration")]
 public class SumTypeAttribute : Attribute
