@@ -11,10 +11,5 @@ public enum Impl
     Comparable = 1 << 2,
     IStructuralComparable = 1 << 3,
 
-    /// <summary>
-    /// ToString
-    /// </summary>
-    Debug = 1 << 4,
-
-    Deconstruct = 1 << 5,
+    Deconstruct = 1 << 4,
 }
